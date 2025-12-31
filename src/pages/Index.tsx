@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info } from "lucide-react";
+import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import CasinoBackground from "@/components/CasinoBackground";
@@ -10,12 +10,24 @@ import RewardsPanel from "@/components/RewardsPanel";
 import WinnersPanel, { WinnerRecord } from "@/components/WinnersPanel";
 import LiveFeed, { FlipRecord } from "@/components/LiveFeed";
 
-const FLIP_INTERVAL = 120; // 2 minutes
+const FLIP_INTERVAL = 120;
 
-// Mock data - replace with real data from your backend
+// Solana Logo Component
+const SolanaLogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 397.7 311.7" className={className} fill="currentColor">
+    <linearGradient id="sol-main" x1="360.879" y1="351.455" x2="141.213" y2="-69.294" gradientTransform="matrix(1 0 0 -1 0 314)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stopColor="#00FFA3"/>
+      <stop offset="1" stopColor="#DC1FFF"/>
+    </linearGradient>
+    <path fill="url(#sol-main)" d="M64.6,237.9c2.4-2.4,5.7-3.8,9.2-3.8h317.4c5.8,0,8.7,7,4.6,11.1l-62.7,62.7c-2.4,2.4-5.7,3.8-9.2,3.8H6.5c-5.8,0-8.7-7-4.6-11.1L64.6,237.9z"/>
+    <path fill="url(#sol-main)" d="M64.6,3.8C67.1,1.4,70.4,0,73.8,0h317.4c5.8,0,8.7,7,4.6,11.1l-62.7,62.7c-2.4,2.4-5.7,3.8-9.2,3.8H6.5c-5.8,0-8.7-7-4.6-11.1L64.6,3.8z"/>
+    <path fill="url(#sol-main)" d="M333.1,120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8,0-8.7,7-4.6,11.1l62.7,62.7c2.4,2.4,5.7,3.8,9.2,3.8h317.4c5.8,0,8.7-7,4.6-11.1L333.1,120.1z"/>
+  </svg>
+);
+
 const MOCK_WALLETS = [
-  "7xKX...3mN9", "BvR2...pQ8k", "9aZx...W4yL", "mN3p...K7vR",
-  "Qw8m...Xt2P", "Lp5z...Hj9N", "Yk4r...Bs6M", "Df2w...Ng8X"
+  "7xKXp3mN9", "BvR2pQ8kL", "9aZxW4yLm", "mN3pK7vRs",
+  "Qw8mXt2Pn", "Lp5zHj9Nc", "Yk4rBs6Mq", "Df2wNg8Xv"
 ];
 
 const generateMockTxHash = () => {
@@ -36,7 +48,7 @@ const Index = () => {
   const [winners, setWinners] = useState<WinnerRecord[]>([]);
   const [totalBurned, setTotalBurned] = useState(0);
   const [totalToHolders, setTotalToHolders] = useState(0);
-  const [devRewards, setDevRewards] = useState(0);
+  const [devRewardsSol, setDevRewardsSol] = useState(0);
   const { toast } = useToast();
 
   const performFlip = useCallback(() => {
@@ -49,8 +61,8 @@ const Index = () => {
     setTimeout(() => {
       const result = Math.random() > 0.5 ? "burn" : "holder";
       const amount = Math.floor(Math.random() * 50000) + 10000;
-      const devCut = Math.floor(amount * 0.02); // 2% dev fee
-      const netAmount = amount - devCut;
+      const solValue = (Math.random() * 0.5 + 0.1); // 0.1 - 0.6 SOL per flip
+      const devCutSol = solValue * 0.02; // 2% dev fee in SOL
       
       setCurrentResult(result);
       setIsFlipping(false);
@@ -69,7 +81,7 @@ const Index = () => {
         id: Date.now(),
         type: result,
         wallet: result === "holder" ? MOCK_WALLETS[Math.floor(Math.random() * MOCK_WALLETS.length)] : undefined,
-        amount: netAmount,
+        amount,
         txHash: generateMockTxHash(),
         timestamp: new Date(),
       };
@@ -77,15 +89,15 @@ const Index = () => {
 
       // Update totals
       if (result === "burn") {
-        setTotalBurned((prev) => prev + netAmount);
+        setTotalBurned((prev) => prev + amount);
       } else {
-        setTotalToHolders((prev) => prev + netAmount);
+        setTotalToHolders((prev) => prev + amount);
       }
-      setDevRewards((prev) => prev + devCut);
+      setDevRewardsSol((prev) => prev + devCutSol);
 
       toast({
         title: result === "burn" ? "🔥 Buyback & Burn!" : "🎁 Holder Wins!",
-        description: `${netAmount.toLocaleString()} tokens ${result === "burn" ? "burned" : "sent to lucky holder"}`,
+        description: `${amount.toLocaleString()} tokens ${result === "burn" ? "burned" : "sent to holder"}`,
       });
 
       setTimeout(() => {
@@ -98,9 +110,7 @@ const Index = () => {
     setIsRunning((prev) => !prev);
     toast({
       title: isRunning ? "Auto-flip paused" : "Auto-flip resumed",
-      description: isRunning 
-        ? "Click play to resume" 
-        : "Next flip in 2 minutes",
+      description: isRunning ? "Click play to resume" : "Next flip in 2 minutes",
     });
   };
 
@@ -109,7 +119,7 @@ const Index = () => {
     setWinners([]);
     setTotalBurned(0);
     setTotalToHolders(0);
-    setDevRewards(0);
+    setDevRewardsSol(0);
     toast({ title: "Reset complete" });
   };
 
@@ -120,43 +130,53 @@ const Index = () => {
 
       <div className="relative z-10">
         {/* Top bar */}
-        <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
+        <div className="border-b border-border/80 bg-card/60 backdrop-blur-xl sticky top-0 z-40">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
-                <span className="text-lg">🪙</span>
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                <Coins className="w-5 h-5 text-amber-900" />
               </div>
               <div>
-                <h1 className="font-semibold text-sm tracking-tight">COINFLIP</h1>
-                <p className="text-[10px] text-muted-foreground">Burn or Reward</p>
+                <h1 className="font-bold text-sm tracking-tight">COINFLIP</h1>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  Powered by <SolanaLogo className="w-3 h-3 inline" /> Solana
+                </p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-live" />
-                <span className="text-[10px] font-medium text-primary uppercase tracking-wider">Live</span>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 border border-border">
+                <SolanaLogo className="w-4 h-4" />
+                <span className="font-mono text-xs font-semibold text-foreground">
+                  {devRewardsSol.toFixed(3)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">SOL</span>
+              </div>
+              
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/25">
+                <div className="w-2 h-2 rounded-full bg-primary animate-live" />
+                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Live</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="container mx-auto px-4 py-6 md:py-8">
+        <div className="container mx-auto px-4 py-6 md:py-8 max-w-6xl">
           {/* Rewards panel */}
           <div className="mb-8">
             <RewardsPanel 
               totalBurned={totalBurned}
               totalToHolders={totalToHolders}
-              devRewards={devRewards}
+              devRewardsSol={devRewardsSol}
               totalFlips={history.length}
             />
           </div>
 
           {/* Main game area */}
-          <div className="grid lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-8 items-start mb-8">
+          <div className="grid lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-10 items-start mb-8">
             {/* Left - Timer */}
-            <div className="flex justify-center lg:justify-end">
-              <div className="w-full max-w-[220px]">
+            <div className="flex justify-center lg:justify-end order-2 lg:order-1">
+              <div className="w-full max-w-[240px]">
                 <CasinoTimer
                   seconds={FLIP_INTERVAL}
                   onComplete={performFlip}
@@ -166,17 +186,17 @@ const Index = () => {
             </div>
 
             {/* Center - Coin & Controls */}
-            <div className="flex flex-col items-center gap-6">
+            <div className="flex flex-col items-center gap-8 order-1 lg:order-2">
               <CasinoCoin isFlipping={isFlipping} result={currentResult} />
               
               {/* Controls */}
-              <div className="flex flex-col items-center gap-3">
+              <div className="flex flex-col items-center gap-4">
                 <Button
                   onClick={performFlip}
                   disabled={isFlipping}
-                  className="min-w-[140px] h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30 disabled:opacity-50"
+                  className="min-w-[160px] h-12 bg-gradient-to-r from-primary to-[#0ea87a] hover:from-primary/90 hover:to-[#0ea87a]/90 text-primary-foreground font-bold rounded-xl shadow-lg shadow-primary/25 transition-all hover:shadow-primary/40 hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
                 >
-                  <Zap className="w-4 h-4 mr-2" />
+                  <Zap className="w-5 h-5 mr-2" />
                   {isFlipping ? "Flipping..." : "Flip Now"}
                 </Button>
                 
@@ -185,7 +205,7 @@ const Index = () => {
                     variant="outline"
                     size="icon"
                     onClick={toggleAutoFlip}
-                    className="w-10 h-10 rounded-xl border-border bg-card hover:bg-muted"
+                    className="w-11 h-11 rounded-xl border-border bg-card hover:bg-muted transition-all hover:scale-105"
                   >
                     {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   </Button>
@@ -193,7 +213,7 @@ const Index = () => {
                     variant="outline"
                     size="icon"
                     onClick={resetHistory}
-                    className="w-10 h-10 rounded-xl border-border bg-card hover:bg-muted"
+                    className="w-11 h-11 rounded-xl border-border bg-card hover:bg-muted transition-all hover:scale-105"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </Button>
@@ -202,7 +222,7 @@ const Index = () => {
             </div>
 
             {/* Right - Live Feed */}
-            <div className="flex justify-center lg:justify-start">
+            <div className="flex justify-center lg:justify-start order-3">
               <div className="w-full max-w-[280px]">
                 <LiveFeed history={history} />
               </div>
@@ -215,43 +235,43 @@ const Index = () => {
           </div>
 
           {/* How it works */}
-          <div className="stake-card rounded-xl p-5">
+          <div className="rounded-2xl p-5 bg-gradient-to-b from-card to-background border border-border">
             <div className="flex items-center gap-2 mb-4">
               <Info className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">How It Works</span>
+              <span className="text-sm font-semibold">How It Works</span>
             </div>
             
             <div className="grid md:grid-cols-3 gap-3">
-              <div className="flex gap-3 p-3 rounded-lg bg-ember/5 border border-ember/10">
-                <div className="w-9 h-9 rounded-lg bg-ember/10 flex items-center justify-center shrink-0">
-                  <Flame className="w-4 h-4 text-ember" />
+              <div className="flex gap-3 p-4 rounded-xl bg-ember/5 border border-ember/10 hover:border-ember/25 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-ember/15 flex items-center justify-center shrink-0">
+                  <Flame className="w-5 h-5 text-ember" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-ember mb-0.5">Buyback & Burn</p>
+                  <p className="text-xs font-semibold text-ember mb-1">Buyback & Burn</p>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     Tokens bought from market and permanently burned.
                   </p>
                 </div>
               </div>
               
-              <div className="flex gap-3 p-3 rounded-lg bg-royal/5 border border-royal/10">
-                <div className="w-9 h-9 rounded-lg bg-royal/10 flex items-center justify-center shrink-0">
-                  <Gift className="w-4 h-4 text-royal" />
+              <div className="flex gap-3 p-4 rounded-xl bg-royal/5 border border-royal/10 hover:border-royal/25 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-royal/15 flex items-center justify-center shrink-0">
+                  <Gift className="w-5 h-5 text-royal" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-royal mb-0.5">Random Holder</p>
+                  <p className="text-xs font-semibold text-royal mb-1">Random Holder</p>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     Lucky token holder selected to receive reward.
                   </p>
                 </div>
               </div>
 
-              <div className="flex gap-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
-                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Zap className="w-4 h-4 text-primary" />
+              <div className="flex gap-3 p-4 rounded-xl bg-primary/5 border border-primary/10 hover:border-primary/25 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                  <Zap className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-primary mb-0.5">Auto Flip</p>
+                  <p className="text-xs font-semibold text-primary mb-1">Auto Flip</p>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     Automatic coin flip every 2 minutes, 24/7.
                   </p>
@@ -261,9 +281,13 @@ const Index = () => {
           </div>
 
           {/* Footer */}
-          <footer className="text-center mt-8 pb-6">
-            <p className="text-[10px] text-muted-foreground">
-              50/50 odds • 2% dev fee • All transactions on Solana
+          <footer className="text-center mt-10 pb-6">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <SolanaLogo className="w-4 h-4" />
+              <span className="text-xs text-muted-foreground">Built on Solana</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground/60">
+              50/50 odds • 2% dev fee • All transactions verifiable on Solscan
             </p>
           </footer>
         </div>
