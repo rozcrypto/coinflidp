@@ -2,41 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @layer base {
   :root {
-    --background: 225 25% 3%;
+    --background: 228 25% 3%;
     --foreground: 0 0% 98%;
 
-    --card: 225 22% 5%;
+    --card: 228 22% 6%;
     --card-foreground: 0 0% 98%;
 
-    --popover: 225 22% 5%;
+    --popover: 228 22% 6%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 145 80% 42%;
-    --primary-foreground: 225 25% 3%;
+    --primary: 160 84% 39%;
+    --primary-foreground: 228 25% 3%;
 
-    --secondary: 225 18% 8%;
+    --secondary: 228 18% 10%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 225 15% 10%;
-    --muted-foreground: 225 10% 45%;
+    --muted: 228 15% 12%;
+    --muted-foreground: 228 10% 50%;
 
     --accent: 45 100% 50%;
-    --accent-foreground: 225 25% 3%;
+    --accent-foreground: 228 25% 3%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 225 15% 12%;
-    --input: 225 15% 10%;
-    --ring: 145 80% 42%;
+    --border: 228 15% 14%;
+    --input: 228 15% 12%;
+    --ring: 160 84% 39%;
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
 
-    /* Casino palette */
+    /* Extended palette */
     --gold-light: 48 100% 67%;
     --gold: 45 100% 50%;
     --gold-dark: 40 100% 38%;
@@ -45,14 +45,8 @@
     --royal-purple: 265 70% 58%;
     --electric-blue: 205 100% 55%;
     --neon-cyan: 175 100% 45%;
-
-    /* Surfaces */
-    --surface-0: 225 25% 3%;
-    --surface-1: 225 22% 5%;
-    --surface-2: 225 20% 7%;
-    --surface-3: 225 18% 9%;
-    --surface-4: 225 16% 11%;
-    --surface-5: 225 14% 14%;
+    --solana-green: 160 90% 51%;
+    --solana-purple: 280 100% 65%;
   }
 }
 
@@ -86,7 +80,7 @@
   }
 
   .text-gradient-green {
-    background: linear-gradient(135deg, hsl(150 85% 55%) 0%, hsl(145 80% 42%) 50%, hsl(142 75% 35%) 100%);
+    background: linear-gradient(135deg, hsl(160 90% 60%) 0%, hsl(160 84% 39%) 50%, hsl(158 80% 32%) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -106,48 +100,55 @@
     background-clip: text;
   }
 
+  .text-gradient-solana {
+    background: linear-gradient(135deg, #14F195 0%, #9945FF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
   /* Card styles */
   .stake-card {
-    background: hsl(225 22% 5%);
-    border: 1px solid hsl(225 15% 12%);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    background: linear-gradient(180deg, hsl(228 22% 7%) 0%, hsl(228 25% 4%) 100%);
+    border: 1px solid hsl(228 15% 14%);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 hsl(228 15% 18% / 0.3);
   }
 
   .stake-card-elevated {
-    background: linear-gradient(180deg, hsl(225 20% 7%) 0%, hsl(225 22% 5%) 100%);
-    border: 1px solid hsl(225 15% 14%);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    background: linear-gradient(180deg, hsl(228 20% 8%) 0%, hsl(228 22% 5%) 100%);
+    border: 1px solid hsl(228 15% 16%);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 hsl(228 15% 20% / 0.4);
   }
 
   .stake-card-highlight {
-    background: hsl(225 22% 5%);
-    border: 1px solid hsl(145 50% 25% / 0.4);
-    box-shadow: 0 0 40px hsl(145 80% 42% / 0.06);
+    background: linear-gradient(180deg, hsl(228 22% 7%) 0%, hsl(228 25% 4%) 100%);
+    border: 1px solid hsl(160 50% 25% / 0.5);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 60px hsl(160 84% 39% / 0.08);
   }
 
   /* Glows */
   .glow-green {
-    box-shadow: 0 0 30px hsl(145 80% 42% / 0.25), 0 0 60px hsl(145 80% 42% / 0.1);
+    box-shadow: 0 0 40px hsl(160 84% 39% / 0.3), 0 0 80px hsl(160 84% 39% / 0.12);
   }
 
   .glow-gold {
-    box-shadow: 0 0 40px hsl(45 100% 50% / 0.25), 0 0 80px hsl(45 100% 50% / 0.1);
+    box-shadow: 0 0 50px hsl(45 100% 50% / 0.3), 0 0 100px hsl(45 100% 50% / 0.12);
   }
 
   .glow-ember {
-    box-shadow: 0 0 35px hsl(14 100% 57% / 0.3), 0 0 70px hsl(25 100% 50% / 0.15);
+    box-shadow: 0 0 40px hsl(14 100% 57% / 0.35), 0 0 80px hsl(25 100% 50% / 0.15);
   }
 
   .glow-purple {
-    box-shadow: 0 0 35px hsl(265 70% 58% / 0.3), 0 0 70px hsl(265 70% 58% / 0.15);
+    box-shadow: 0 0 40px hsl(265 70% 58% / 0.35), 0 0 80px hsl(265 70% 58% / 0.15);
   }
 
   .text-glow-green {
-    text-shadow: 0 0 20px hsl(145 80% 42% / 0.6);
+    text-shadow: 0 0 25px hsl(160 84% 39% / 0.7);
   }
 
   .text-glow-gold {
-    text-shadow: 0 0 25px hsl(45 100% 50% / 0.5);
+    text-shadow: 0 0 30px hsl(45 100% 50% / 0.6);
   }
 }
 
@@ -173,7 +174,7 @@
 /* Idle hover */
 @keyframes coinIdle {
   0%, 100% { transform: translateY(0) rotateY(0deg); }
-  50% { transform: translateY(-10px) rotateY(8deg); }
+  50% { transform: translateY(-12px) rotateY(10deg); }
 }
 
 .animate-coin-idle {
@@ -193,17 +194,17 @@
 /* Pulse ring */
 @keyframes pulseRing {
   0%, 100% { transform: scale(1); opacity: 0.5; }
-  50% { transform: scale(1.06); opacity: 0.25; }
+  50% { transform: scale(1.08); opacity: 0.2; }
 }
 
 .animate-pulse-ring {
-  animation: pulseRing 2.5s ease-in-out infinite;
+  animation: pulseRing 3s ease-in-out infinite;
 }
 
 /* Expand */
 @keyframes expandOut {
-  0% { transform: scale(0.95); opacity: 0.7; }
-  100% { transform: scale(2.2); opacity: 0; }
+  0% { transform: scale(0.9); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
 }
 
 .animate-expand {
@@ -212,8 +213,8 @@
 
 /* Live pulse */
 @keyframes livePulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 hsl(145 80% 42% / 0.5); }
-  50% { opacity: 0.7; box-shadow: 0 0 0 4px hsl(145 80% 42% / 0); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 hsl(160 84% 39% / 0.6); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 6px hsl(160 84% 39% / 0); }
 }
 
 .animate-live {
@@ -222,59 +223,85 @@
 
 /* Slide up */
 @keyframes slideUp {
-  0% { transform: translateY(20px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% { transform: translateY(24px) scale(0.96); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 .animate-slide-up {
-  animation: slideUp 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation: slideUp 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 /* Shadow pulse */
 @keyframes shadowPulse {
-  0%, 100% { transform: scaleX(1) scaleY(1); opacity: 0.25; }
-  50% { transform: scaleX(0.88) scaleY(0.9); opacity: 0.12; }
+  0%, 100% { transform: scaleX(1) scaleY(1); opacity: 0.3; }
+  50% { transform: scaleX(0.85) scaleY(0.85); opacity: 0.15; }
 }
 
 .animate-shadow-pulse {
   animation: shadowPulse 4s ease-in-out infinite;
 }
 
-/* Number count up */
-@keyframes countUp {
-  0% { transform: translateY(8px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+/* Subtle float */
+@keyframes subtleFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
-.animate-count {
-  animation: countUp 0.3s ease-out;
+.animate-float {
+  animation: subtleFloat 3s ease-in-out infinite;
 }
 
 /* Row highlight */
 @keyframes rowHighlight {
-  0% { background: hsl(145 80% 42% / 0.15); }
+  0% { background: hsl(160 84% 39% / 0.12); }
   100% { background: transparent; }
 }
 
 .animate-row-highlight {
-  animation: rowHighlight 2s ease-out;
+  animation: rowHighlight 2.5s ease-out;
+}
+
+/* Number tick */
+@keyframes numberTick {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.animate-number-tick {
+  animation: numberTick 0.3s ease-out;
+}
+
+/* Gradient border animation */
+@keyframes gradientBorder {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.animate-gradient-border {
+  animation: gradientBorder 2s ease-in-out infinite;
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(225 22% 5%);
+  background: hsl(228 22% 5%);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(225 15% 18%);
+  background: hsl(228 15% 20%);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(225 15% 25%);
+  background: hsl(228 15% 28%);
+}
+
+/* Selection */
+::selection {
+  background: hsl(160 84% 39% / 0.3);
+  color: white;
 }
