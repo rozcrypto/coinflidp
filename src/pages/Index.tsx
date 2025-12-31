@@ -12,7 +12,7 @@ import LiveFeed, { FlipRecord } from "@/components/LiveFeed";
 import Leaderboard, { LeaderboardEntry } from "@/components/Leaderboard";
 import { cn } from "@/lib/utils";
 import coinLogo from "@/assets/coin-logo.png";
-import pumpfunLogo from "@/assets/pumpfun-logo.jpg";
+import pumpfunLogo from "@/assets/pumpfun-logo.png";
 
 const FLIP_INTERVAL = 120;
 
@@ -176,31 +176,26 @@ const Index = () => {
                 <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary border-2 border-background animate-pulse" />
               </div>
               <div>
-                <h1 className="font-display font-bold text-base tracking-tight flex items-center gap-2">
+                <h1 className="font-display font-bold text-lg tracking-tight flex items-center gap-2">
                   COINFLIP
-                  <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-gradient-to-r from-primary/20 to-primary/10 text-primary border border-primary/20 font-bold uppercase tracking-wider">Beta</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-gradient-to-r from-primary/20 to-primary/10 text-primary border border-primary/20 font-bold uppercase tracking-wider">Beta</span>
                 </h1>
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  Powered by <SolanaLogo className="w-3 h-3" /> <span className="text-gradient-solana font-medium">Solana</span>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Powered by <SolanaLogo className="w-3.5 h-3.5" /> <span className="text-gradient-solana font-medium">Solana</span>
                 </p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
-              {/* Ticker */}
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl glass-premium border border-amber-500/30">
-                <span className="text-xs font-bold text-amber-400 font-mono">$COINFLIP</span>
-              </div>
-
-              {/* Buy on PumpFun */}
+            <div className="flex items-center gap-3">
+              {/* Buy $COINFLIP on PumpFun */}
               <a 
                 href="#" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#3fc99d]/15 border border-[#3fc99d]/30 hover:bg-[#3fc99d]/25 hover:border-[#3fc99d]/50 transition-all duration-300"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3fc99d]/15 border border-[#3fc99d]/40 hover:bg-[#3fc99d]/25 hover:border-[#3fc99d]/60 transition-all duration-300"
               >
-                <img src={pumpfunLogo} alt="PumpFun" className="w-5 h-5 rounded-full object-cover" />
-                <span className="text-xs font-bold text-[#3fc99d] hidden sm:inline">Buy</span>
+                <span className="text-sm font-bold text-[#3fc99d]">Buy $COINFLIP</span>
+                <img src={pumpfunLogo} alt="PumpFun" className="w-6 h-6 object-contain" />
               </a>
 
               {/* X (Twitter) Link */}
