@@ -86,9 +86,9 @@ const CoinFace = ({
         />
 
         {/* CENTER TEXT */}
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
           <span 
-            className="text-2xl md:text-3xl lg:text-4xl font-black leading-none select-none tracking-tight"
+            className="text-xl md:text-2xl lg:text-3xl font-black leading-none select-none tracking-tight"
             style={{
               fontFamily: "'Space Grotesk', sans-serif",
               color: isHeads ? "#5a4510" : "#FFFFFF",
@@ -97,8 +97,19 @@ const CoinFace = ({
                 : "1px 1px 0 rgba(200,150,220,0.4), 2px 3px 6px rgba(0,0,0,0.6), 0 0 20px rgba(153,50,204,0.3)"
             }}
           >
-            {isHeads ? "HEADS" : "HOLDER"}
+            {isHeads ? "HEADS" : "TAILS"}
           </span>
+          {!isHeads && (
+            <span 
+              className="text-[8px] md:text-[10px] font-semibold tracking-widest opacity-80"
+              style={{
+                color: "#E0C0E0",
+                textShadow: "1px 1px 2px rgba(0,0,0,0.5)"
+              }}
+            >
+              HOLDERS
+            </span>
+          )}
         </div>
 
         {/* Decorative studs */}
@@ -222,7 +233,7 @@ const CasinoCoin = ({ isFlipping, result }: CasinoCoinProps) => {
               ? "bg-purple-600/15 text-purple-400 border-purple-600/30 shadow-[0_0_25px_rgba(147,51,234,0.25)]"
               : "bg-muted/30 text-muted-foreground border-border"
       )}>
-        {isFlipping ? "Flipping..." : result === "burn" ? "HEADS - Burn!" : result === "holder" ? "HOLDER - Winner!" : "Ready to Flip"}
+        {isFlipping ? "Flipping..." : result === "burn" ? "HEADS - Burn!" : result === "holder" ? "TAILS - Winner!" : "Ready to Flip"}
       </div>
     </div>
   );
