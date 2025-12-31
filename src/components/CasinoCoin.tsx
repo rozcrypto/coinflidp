@@ -16,16 +16,15 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
           ? `radial-gradient(ellipse 80% 50% at 30% 20%, rgba(255,250,205,0.9) 0%, transparent 35%),
              radial-gradient(ellipse 60% 40% at 70% 80%, rgba(139,105,20,0.6) 0%, transparent 40%),
              radial-gradient(circle at 50% 50%, #ffd700 0%, #eec900 25%, #daa520 45%, #b8860b 65%, #8b6914 85%, #6b5210 100%)`
-          : `radial-gradient(ellipse 80% 50% at 30% 20%, rgba(200,180,255,0.9) 0%, transparent 35%),
-             radial-gradient(ellipse 60% 40% at 70% 80%, rgba(91,33,182,0.6) 0%, transparent 40%),
-             radial-gradient(circle at 50% 50%, #a78bfa 0%, #8b5cf6 25%, #7c3aed 45%, #6d28d9 65%, #5b21b6 85%, #4c1d95 100%)`,
+          : `radial-gradient(ellipse 80% 50% at 30% 20%, rgba(128,0,128,0.4) 0%, transparent 35%),
+             radial-gradient(ellipse 60% 40% at 70% 80%, rgba(75,0,130,0.5) 0%, transparent 40%),
+             radial-gradient(circle at 50% 50%, #9932CC 0%, #8B008B 25%, #800080 45%, #6B0B6B 65%, #4B0082 85%, #2E0854 100%)`,
         boxShadow: `
-          inset 0 10px 40px rgba(255,255,255,0.6),
+          inset 0 10px 40px rgba(255,255,255,0.5),
           inset 0 -10px 40px rgba(0,0,0,0.5),
-          inset 5px 0 30px rgba(255,255,255,0.2),
+          inset 5px 0 30px rgba(255,255,255,0.15),
           inset -5px 0 30px rgba(0,0,0,0.3),
-          0 40px 80px -20px rgba(0,0,0,0.6),
-          0 0 100px ${isHeads ? "rgba(255,215,0,0.4)" : "rgba(139,92,246,0.4)"}
+          0 40px 80px -20px rgba(0,0,0,0.6)
         `,
         transform: isBack ? "translateZ(-2px) rotateY(180deg)" : "translateZ(14px)",
         backfaceVisibility: "hidden"
@@ -47,12 +46,12 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
           background: isHeads
             ? `radial-gradient(ellipse 70% 45% at 35% 25%, rgba(255,250,205,0.8) 0%, transparent 40%),
                radial-gradient(circle at 50% 50%, #ffd700 0%, #eec900 20%, #daa520 40%, #cd9b1d 60%, #b8860b 80%, #8b6914 100%)`
-            : `radial-gradient(ellipse 70% 45% at 35% 25%, rgba(200,180,255,0.8) 0%, transparent 40%),
-               radial-gradient(circle at 50% 50%, #a78bfa 0%, #8b5cf6 20%, #7c3aed 40%, #6d28d9 60%, #5b21b6 80%, #4c1d95 100%)`,
+            : `radial-gradient(ellipse 70% 45% at 35% 25%, rgba(180,130,200,0.5) 0%, transparent 40%),
+               radial-gradient(circle at 50% 50%, #9932CC 0%, #8B008B 20%, #800080 40%, #6B0B6B 60%, #4B0082 80%, #2E0854 100%)`,
           boxShadow: `
-            inset 0 8px 25px rgba(255,255,255,0.5),
+            inset 0 8px 25px rgba(255,255,255,0.4),
             inset 0 -8px 25px rgba(0,0,0,0.4),
-            inset 3px 0 15px rgba(255,255,255,0.15),
+            inset 3px 0 15px rgba(255,255,255,0.1),
             inset -3px 0 15px rgba(0,0,0,0.25),
             0 4px 20px rgba(0,0,0,0.3)
           `
@@ -62,7 +61,7 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
         <div 
           className="absolute inset-[4%] rounded-full"
           style={{ 
-            border: `3px solid ${isHeads ? "rgba(139, 105, 20, 0.35)" : "rgba(91, 33, 182, 0.35)"}`,
+            border: `3px solid ${isHeads ? "rgba(139, 105, 20, 0.35)" : "rgba(75, 0, 130, 0.5)"}`,
             boxShadow: "inset 0 1px 2px rgba(255,255,255,0.2), 0 1px 2px rgba(0,0,0,0.2)"
           }}
         />
@@ -75,14 +74,16 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
               fontFamily: "'Space Grotesk', sans-serif",
               background: isHeads 
                 ? "linear-gradient(180deg, #a08020 0%, #6b5210 40%, #4a3810 70%, #3d2e08 100%)"
-                : "linear-gradient(180deg, #c4b5fd 0%, #8b5cf6 40%, #6d28d9 70%, #4c1d95 100%)",
+                : "linear-gradient(180deg, #E6CCE6 0%, #CC99CC 40%, #9932CC 70%, #4B0082 100%)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",
-              filter: "drop-shadow(2px 3px 0 rgba(255,250,205,0.4)) drop-shadow(-1px -1px 0 rgba(0,0,0,0.3))"
+              filter: isHeads 
+                ? "drop-shadow(2px 3px 0 rgba(255,250,205,0.4)) drop-shadow(-1px -1px 0 rgba(0,0,0,0.3))"
+                : "drop-shadow(2px 3px 0 rgba(200,150,200,0.4)) drop-shadow(-1px -1px 0 rgba(0,0,0,0.4))"
             }}
           >
-            {isHeads ? "HEADS" : "TAILS"}
+            {isHeads ? "HEADS" : "HOLDER"}
           </span>
         </div>
 
@@ -94,7 +95,7 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
             style={{
               background: isHeads 
                 ? "radial-gradient(circle at 30% 30%, #d4af37 0%, #8b6914 50%, #5a4510 100%)"
-                : "radial-gradient(circle at 30% 30%, #a78bfa 0%, #6d28d9 50%, #4c1d95 100%)",
+                : "radial-gradient(circle at 30% 30%, #9932CC 0%, #6B0B6B 50%, #2E0854 100%)",
               boxShadow: "inset 0 1px 2px rgba(255,255,255,0.4), inset 0 -1px 2px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3)",
               top: `${50 + 43 * Math.sin((i * Math.PI * 2) / 16)}%`,
               left: `${50 + 43 * Math.cos((i * Math.PI * 2) / 16)}%`,
@@ -108,7 +109,7 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
       <div 
         className="absolute top-[4%] left-[18%] right-[18%] h-[15%] rounded-full pointer-events-none"
         style={{
-          background: "linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.15) 50%, transparent 100%)"
+          background: "linear-gradient(180deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 50%, transparent 100%)"
         }}
       />
 
@@ -116,7 +117,7 @@ const CoinFace = ({ side, isBack = false }: { side: "heads" | "tails"; isBack?: 
       <div 
         className="absolute top-[20%] left-[3%] w-[8%] h-[40%] rounded-full pointer-events-none"
         style={{
-          background: "linear-gradient(90deg, rgba(255,255,255,0.2) 0%, transparent 100%)"
+          background: "linear-gradient(90deg, rgba(255,255,255,0.15) 0%, transparent 100%)"
         }}
       />
     </div>
@@ -136,7 +137,7 @@ const CasinoCoin = ({ isFlipping, result }: CasinoCoinProps) => {
         result === "burn" 
           ? "bg-gradient-radial from-ember/50 to-transparent" 
           : result === "holder" 
-            ? "bg-gradient-radial from-violet-500/50 to-transparent"
+            ? "bg-gradient-radial from-purple-600/50 to-transparent"
             : "bg-gradient-radial from-amber-500/30 to-transparent"
       )} />
 
@@ -203,7 +204,7 @@ const CasinoCoin = ({ isFlipping, result }: CasinoCoinProps) => {
         {result && !isFlipping && (
           <div className={cn(
             "absolute -inset-10 rounded-full blur-3xl animate-pulse pointer-events-none",
-            result === "burn" ? "bg-ember/50" : "bg-violet-500/50"
+            result === "burn" ? "bg-ember/50" : "bg-purple-600/50"
           )} />
         )}
       </div>
@@ -221,10 +222,10 @@ const CasinoCoin = ({ isFlipping, result }: CasinoCoinProps) => {
           : result === "burn"
             ? "bg-ember/15 text-ember border-ember/30 shadow-[0_0_25px_hsl(14_100%_57%_/_0.25)]"
             : result === "holder"
-              ? "bg-violet-500/15 text-violet-400 border-violet-500/30 shadow-[0_0_25px_rgba(139,92,246,0.25)]"
+              ? "bg-purple-600/15 text-purple-400 border-purple-600/30 shadow-[0_0_25px_rgba(147,51,234,0.25)]"
               : "bg-muted/30 text-muted-foreground border-border"
       )}>
-        {isFlipping ? "Flipping..." : result === "burn" ? "HEADS - Burn!" : result === "holder" ? "TAILS - Winner!" : "Ready to Flip"}
+        {isFlipping ? "Flipping..." : result === "burn" ? "HEADS - Burn!" : result === "holder" ? "HOLDER - Winner!" : "Ready to Flip"}
       </div>
     </div>
   );
