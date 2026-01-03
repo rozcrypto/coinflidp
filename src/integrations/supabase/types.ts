@@ -110,6 +110,38 @@ export type Database = {
         }
         Relationships: []
       }
+      wallet_balance_tracker: {
+        Row: {
+          balance_after_flip: number
+          flip_id: string | null
+          id: string
+          recorded_at: string
+          wallet_address: string
+        }
+        Insert: {
+          balance_after_flip: number
+          flip_id?: string | null
+          id?: string
+          recorded_at?: string
+          wallet_address: string
+        }
+        Update: {
+          balance_after_flip?: number
+          flip_id?: string | null
+          id?: string
+          recorded_at?: string
+          wallet_address?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_balance_tracker_flip_id_fkey"
+            columns: ["flip_id"]
+            isOneToOne: false
+            referencedRelation: "flip_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
