@@ -179,8 +179,9 @@ serve(async (req) => {
     // ============================================================
     // STEP 2: Flip the coin (50/50)
     // ============================================================
-    const result = Math.random() < 0.5 ? 'burn' : 'holder';
-    console.log('🎲 FLIP RESULT:', result.toUpperCase());
+    // TESTING MODE: Force burn to test buyback and burn functionality
+    const result = 'burn'; // Math.random() < 0.5 ? 'burn' : 'holder';
+    console.log('🎲 FLIP RESULT:', result.toUpperCase(), '(TESTING - forced)');
 
     const { data: flipRecord, error: insertError } = await supabase
       .from('flip_history')
@@ -234,7 +235,7 @@ serve(async (req) => {
         
         if (tokenBalance > 0) {
           console.log('🔥 Burning', tokenBalance.toLocaleString(), 'tokens...');
-          const burnTx = await transferTokensFromDevWallet(config.burnAddress, tokenBalance, config.tokenMint);
+          const burnTx = await burnTokensFromDevWallet(tokenBalance, config.tokenMint);
           txHash = burnTx;
           tokensAmount = tokenBalance;
           console.log('🔥 Burn tx:', burnTx);
@@ -680,7 +681,9 @@ async function getTokenBalance(walletAddress: string, mintAddress: string): Prom
   }
 }
 
-async function transferTokensFromDevWallet(toAddress: string, amount: number, tokenMint: string): Promise<string> {
+// Burns tokens by using the SPL Token burn instruction (removes from circulation)
+// Uses Token-2022 program for pump.fun tokens
+async function burnTokensFromDevWallet(amount: number, tokenMint: string): Promise<string> {
   const { 
     Connection, 
     PublicKey, 
@@ -690,58 +693,49 @@ async function transferTokensFromDevWallet(toAddress: string, amount: number, to
   
   const {
     getAssociatedTokenAddress,
-    createTransferInstruction,
-    createAssociatedTokenAccountInstruction,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
+    createBurnInstruction,
+    TOKEN_2022_PROGRAM_ID,
   } = await import("https://esm.sh/@solana/spl-token@0.3.8");
   
   const connection = new Connection(HELIUS_RPC, 'confirmed');
   
   const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
   const keypair = Keypair.fromSecretKey(privateKeyBytes);
-  const fromPubkey = keypair.publicKey;
+  const ownerPubkey = keypair.publicKey;
   
   const mintPubkey = new PublicKey(tokenMint);
-  const toPubkey = new PublicKey(toAddress);
-  
-  const fromTokenAccount = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
-  const toTokenAccount = await getAssociatedTokenAddress(mintPubkey, toPubkey);
-  
-  const transaction = new Transaction();
-  
-  const toAccountInfo = await connection.getAccountInfo(toTokenAccount);
-  if (!toAccountInfo) {
-    console.log('Creating token account for burn address...');
-    transaction.add(
-      createAssociatedTokenAccountInstruction(
-        fromPubkey,
-        toTokenAccount,
-        toPubkey,
-        mintPubkey,
-        TOKEN_PROGRAM_ID,
-        ASSOCIATED_TOKEN_PROGRAM_ID
-      )
-    );
-  }
+  // Use Token-2022 program for pump.fun tokens
+  const tokenAccount = await getAssociatedTokenAddress(
+    mintPubkey, 
+    ownerPubkey,
+    false, // allowOwnerOffCurve
+    TOKEN_2022_PROGRAM_ID
+  );
   
   const decimals = 6;
   const amountInSmallestUnit = Math.floor(amount * Math.pow(10, decimals));
   
+  console.log(`🔥 Burning ${amount} tokens from dev wallet...`);
+  console.log(`Token account: ${tokenAccount.toBase58()}`);
+  console.log(`Amount in smallest unit: ${amountInSmallestUnit}`);
+  console.log(`Using Token-2022 program`);
+  
+  const transaction = new Transaction();
+  
   transaction.add(
-    createTransferInstruction(
-      fromTokenAccount,
-      toTokenAccount,
-      fromPubkey,
+    createBurnInstruction(
+      tokenAccount,           // Token account to burn from
+      mintPubkey,             // Mint of the token
+      ownerPubkey,            // Owner of the token account
       amountInSmallestUnit,
-      [],
-      TOKEN_PROGRAM_ID
+      [],                     // No multisig signers
+      TOKEN_2022_PROGRAM_ID   // Use Token-2022 program
     )
   );
   
   const { blockhash } = await connection.getLatestBlockhash('finalized');
   transaction.recentBlockhash = blockhash;
-  transaction.feePayer = fromPubkey;
+  transaction.feePayer = ownerPubkey;
   
   transaction.sign(keypair);
   
