@@ -2,7 +2,7 @@ import { Flame, Gift, Zap, Radio, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FlipRecord {
-  id: number;
+  id: string | number;
   result: "burn" | "holder";
   timestamp: Date;
 }

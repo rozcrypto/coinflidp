@@ -2,7 +2,7 @@ import { Trophy, Flame, Medal, Crown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface LeaderboardEntry {
-  id: number;
+  id: string | number;
   wallet: string;
   totalWins: number;
   totalAmount: number;
