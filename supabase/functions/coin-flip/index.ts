@@ -67,17 +67,25 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // NEW APPROACH: Detect auto-claimed fees from PumpPortal
-    // PumpPortal auto-claims creator fees to dev wallet on trades
-    // We track balance AFTER each flip to detect NEW incoming fees
+    // STEP 1: First try to claim any pending creator fees
+    // This catches fees that PumpPortal hasn't auto-claimed yet
     // ============================================================
-    
-    // Step 1: Get current wallet balance
-    console.log('Step 1: Getting current wallet balance...');
+    console.log('Step 1: Attempting to claim any pending creator fees...');
+    const claimResult = await claimCreatorFees();
+    if (claimResult.success) {
+      console.log('✅ Claimed pending fees:', claimResult.claimedAmount, 'SOL');
+    } else {
+      console.log('ℹ️ No pending fees to claim (may have been auto-claimed already)');
+    }
+
+    // ============================================================
+    // STEP 2: Get current wallet balance AFTER any claims
+    // ============================================================
+    console.log('Step 2: Getting current wallet balance...');
     const currentBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Current balance:', currentBalance, 'SOL');
 
-    // Step 2: Get the last recorded balance after previous flip
+    // Step 3: Get the last recorded balance after previous flip
     const { data: lastBalanceRecord } = await supabase
       .from('wallet_balance_tracker')
       .select('balance_after_flip, recorded_at')
@@ -110,10 +118,10 @@ serve(async (req) => {
 
     // ============================================================
     // CRITICAL: Calculate NEW fees = current balance - last recorded
-    // This is the ONLY SOL we are allowed to use (auto-claimed fees)
+    // This includes both auto-claimed fees AND any we just claimed
     // ============================================================
     const newFees = Math.max(0, currentBalance - lastRecordedBalance);
-    console.log('💰 NEW FEES detected (auto-claimed by PumpPortal):', newFees, 'SOL');
+    console.log('💰 NEW FEES available for flip:', newFees, 'SOL');
 
     // Minimum threshold (0.001 SOL)
     if (newFees < 0.001) {
