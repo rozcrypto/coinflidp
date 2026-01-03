@@ -210,22 +210,33 @@ serve(async (req) => {
       try {
         const buyResult = await buyTokensFromDevWallet(amountToUse, config.tokenMint);
         console.log('✅ Buy tx:', buyResult.signature);
+        txHash = buyResult.signature;
         
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait longer for the buy to settle
+        console.log('⏳ Waiting for buy to settle...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
         
-        const tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, config.tokenMint);
-        console.log('💰 Dev wallet has', tokenBalance.toLocaleString(), 'tokens to burn');
+        // Get token balance with retries
+        let tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, config.tokenMint);
+        console.log('💰 Dev wallet has', tokenBalance.toLocaleString(), 'tokens after buy');
+        
+        // Retry if balance is 0 (might need more time)
+        if (tokenBalance <= 0) {
+          console.log('⏳ Balance not visible yet, waiting more...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, config.tokenMint);
+          console.log('💰 Dev wallet has (retry):', tokenBalance.toLocaleString(), 'tokens');
+        }
         
         if (tokenBalance > 0) {
-          console.log('🔥 Transferring tokens to burn address...');
+          console.log('🔥 Burning', tokenBalance.toLocaleString(), 'tokens...');
           const burnTx = await transferTokensFromDevWallet(config.burnAddress, tokenBalance, config.tokenMint);
           txHash = burnTx;
           tokensAmount = tokenBalance;
           console.log('🔥 Burn tx:', burnTx);
         } else {
-          txHash = buyResult.signature;
           tokensAmount = 0;
-          console.log('⚠️ No tokens received, using buy tx as reference');
+          console.log('⚠️ No tokens received from buy, possibly failed or delayed');
         }
         
         await sendDiscordNotification(DISCORD_WEBHOOK_BURNS, {
@@ -289,29 +300,70 @@ serve(async (req) => {
 
         console.log(`✅ Winner verified: ${winnerInfo.balance.toLocaleString()} tokens`);
 
-        // Create TWO FRESH hot wallets for this flip (no reuse)
-        let hotWallet1: HotWallet | null = null;
-        let hotWallet2: HotWallet | null = null;
-
-        try {
-          hotWallet1 = await createNewHotWallet(supabase, 'hot_wallet_1');
-          hotWallet2 = await createNewHotWallet(supabase, 'hot_wallet_2');
-
-          console.log('Hot Wallet 1:', hotWallet1.address);
-          console.log('Hot Wallet 2:', hotWallet2.address);
-
-          // Lower fees so minimum 0.001 SOL can flow through
-          // txFee ~0.000005, use small buffers
+        // For smaller amounts, use DIRECT SEND (skip hot wallets to avoid rent issues)
+        // Multi-hop requires ~0.002 SOL rent per new wallet, so need ~0.05+ for it to work
+        const DIRECT_SEND_THRESHOLD = 0.05; // SOL - use direct send below this
+        
+        if (amountToUse < DIRECT_SEND_THRESHOLD) {
+          console.log('💸 Using DIRECT SEND mode (amount below threshold)');
+          console.log(`Sending ${amountToUse} SOL directly to winner`);
+          
           const txFee = 0.000005;
-          const hop1Amount = amountToUse;
-          const hop2Amount = Math.floor((hop1Amount - txFee) * 1e9) / 1e9;
-          const finalAmount = Math.floor((hop2Amount - txFee) * 1e9) / 1e9;
+          const finalAmount = Math.floor((amountToUse - txFee) * 1e9) / 1e9;
+          
+          const directTx = await sendSolFromDevWallet(recipientWallet, finalAmount);
+          txHash = directTx;
+          console.log('✅ Direct send tx:', directTx);
+          
+          await supabase
+            .from('flip_history')
+            .update({
+              status: 'completed',
+              tx_hash: txHash,
+              recipient_wallet: recipientWallet,
+            })
+            .eq('id', flipRecord.id);
 
-          console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
+          await sendDiscordNotification(DISCORD_WEBHOOK_WINNERS, {
+            embeds: [{
+              title: '💎 HOLDER REWARD (Direct)',
+              color: 0x00ff00,
+              fields: [
+                { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-6)}\``, inline: true },
+                { name: 'Amount', value: `${finalAmount.toFixed(6)} SOL`, inline: true },
+                { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
+              ],
+              timestamp: new Date().toISOString(),
+            }]
+          });
 
-          if (finalAmount < 0.0001) {
-            throw new Error(`Amount too small for multi-hop. Need at least 0.0003 SOL input, have ${amountToUse} SOL`);
-          }
+        } else {
+          // MULTI-HOP PATH for larger amounts
+          console.log('🔀 Using MULTI-HOP mode');
+
+          // Create TWO FRESH hot wallets for this flip (no reuse)
+          let hotWallet1: HotWallet | null = null;
+          let hotWallet2: HotWallet | null = null;
+
+          try {
+            hotWallet1 = await createNewHotWallet(supabase, 'hot_wallet_1');
+            hotWallet2 = await createNewHotWallet(supabase, 'hot_wallet_2');
+
+            console.log('Hot Wallet 1:', hotWallet1.address);
+            console.log('Hot Wallet 2:', hotWallet2.address);
+
+            // Lower fees so minimum 0.001 SOL can flow through
+            // txFee ~0.000005, use small buffers
+            const txFee = 0.000005;
+            const hop1Amount = amountToUse;
+            const hop2Amount = Math.floor((hop1Amount - txFee) * 1e9) / 1e9;
+            const finalAmount = Math.floor((hop2Amount - txFee) * 1e9) / 1e9;
+
+            console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
+
+            if (finalAmount < 0.0001) {
+              throw new Error(`Amount too small for multi-hop. Need at least 0.0003 SOL input, have ${amountToUse} SOL`);
+            }
 
           // HOP 1: Dev Wallet → Hot Wallet 1
           console.log('📤 HOP 1: Dev → Hot Wallet 1');
@@ -384,31 +436,32 @@ serve(async (req) => {
               timestamp: new Date().toISOString(),
             }]
           });
-        } catch (innerErr: unknown) {
-          // If anything fails after wallets are created/funded, sweep them back to dev wallet.
-          console.error('⚠️ Transfer failed; attempting rescue sweep back to dev wallet...');
-          
-          // Send STUCK notification to Discord
-          await sendDiscordNotification(DISCORD_WEBHOOK_WALLET, {
-            embeds: [{
-              title: '🚨 STUCK HOT WALLETS - RESCUE ATTEMPTED',
-              color: 0xFF0000,
-              fields: [
-                { name: 'Hot Wallet 1', value: hotWallet1 ? `\`${hotWallet1.address}\`` : 'N/A', inline: false },
-                { name: 'Hot Wallet 2', value: hotWallet2 ? `\`${hotWallet2.address}\`` : 'N/A', inline: false },
-                { name: 'Error', value: innerErr instanceof Error ? innerErr.message : 'Unknown error', inline: false },
-                { name: 'Status', value: '⚠️ STUCK - Auto-sweeping back to dev wallet...', inline: false },
-              ],
-              timestamp: new Date().toISOString(),
-            }]
-          });
-          
-          await Promise.all([
-            hotWallet1 ? sweepHotWalletBalanceToDevWallet(hotWallet1) : Promise.resolve(),
-            hotWallet2 ? sweepHotWalletBalanceToDevWallet(hotWallet2) : Promise.resolve(),
-          ]);
-          throw innerErr;
-        }
+          } catch (innerErr: unknown) {
+            // If anything fails after wallets are created/funded, sweep them back to dev wallet.
+            console.error('⚠️ Transfer failed; attempting rescue sweep back to dev wallet...');
+            
+            // Send STUCK notification to Discord
+            await sendDiscordNotification(DISCORD_WEBHOOK_WALLET, {
+              embeds: [{
+                title: '🚨 STUCK HOT WALLETS - RESCUE ATTEMPTED',
+                color: 0xFF0000,
+                fields: [
+                  { name: 'Hot Wallet 1', value: hotWallet1 ? `\`${hotWallet1.address}\`` : 'N/A', inline: false },
+                  { name: 'Hot Wallet 2', value: hotWallet2 ? `\`${hotWallet2.address}\`` : 'N/A', inline: false },
+                  { name: 'Error', value: innerErr instanceof Error ? innerErr.message : 'Unknown error', inline: false },
+                  { name: 'Status', value: '⚠️ STUCK - Auto-sweeping back to dev wallet...', inline: false },
+                ],
+                timestamp: new Date().toISOString(),
+              }]
+            });
+            
+            await Promise.all([
+              hotWallet1 ? sweepHotWalletBalanceToDevWallet(hotWallet1) : Promise.resolve(),
+              hotWallet2 ? sweepHotWalletBalanceToDevWallet(hotWallet2) : Promise.resolve(),
+            ]);
+            throw innerErr;
+          }
+        } // end of else (multi-hop)
 
       } catch (holderError: unknown) {
         console.error('❌ Holder error:', holderError);
