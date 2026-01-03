@@ -453,7 +453,7 @@ const Index = () => {
                 </div>
 
                 <p className="text-[10px] text-muted-foreground/50 text-center max-w-[220px]">
-                  Auto-flip every 2 minutes • 50/50 odds • Verifiable on-chain
+                  Auto-flip every 2 minutes • Verifiable on-chain
                 </p>
               </div>
             </div>
@@ -534,7 +534,7 @@ const Index = () => {
               <span className="text-sm text-muted-foreground font-medium">Built on Solana</span>
             </div>
             <p className="text-[11px] text-muted-foreground/40 max-w-md mx-auto">
-              50/50 odds • 2% dev fee • All transactions verifiable on Solscan • Smart contract audited
+              2% dev fee • All transactions verifiable on Solscan • Smart contract audited
             </p>
           </footer>
         </main>
