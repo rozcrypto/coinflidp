@@ -15,19 +15,8 @@ const DISCORD_WEBHOOK_WINNERS = Deno.env.get('DISCORD_WEBHOOK_WINNERS')!;
 const DISCORD_WEBHOOK_BURNS = Deno.env.get('DISCORD_WEBHOOK_BURNS')!;
 const DISCORD_WEBHOOK_WALLET = Deno.env.get('DISCORD_WEBHOOK_WALLET')!;
 
-const TOKEN_MINT = '8Se9ec6eAuq2qqYxF2WysCd3dV3qbG1qD4z6wenPpump';
-const BURN_ADDRESS = '1nc1nerator11111111111111111111111111111111';
 const PUMPPORTAL_API = 'https://pumpportal.fun/api/trade-local';
 const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
-
-// Excluded wallets (Creator, Raydium, Pump Curve, Bonding Curve, etc.)
-const EXCLUDED_WALLETS = [
-  SOLANA_PUBLIC_KEY,
-  '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1', // Raydium
-  'CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM', // Pump Curve
-  'CexgPodxeSJmVB8X9oFdg7Q81Dvi3t4MqofGpexjeo2k', // Bonding Curve (top holder)
-  BURN_ADDRESS,
-];
 
 // Maximum token balance to be eligible for rewards (50M tokens)
 const MAX_ELIGIBLE_BALANCE = 50_000_000;
@@ -42,6 +31,12 @@ interface HotWallet {
   privateKey: string;
 }
 
+interface TokenConfig {
+  tokenMint: string;
+  burnAddress: string;
+  excludedWallets: string[];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -52,6 +47,43 @@ serve(async (req) => {
   try {
     console.log('=== Starting Coin Flip Round ===');
     console.log('Dev wallet:', SOLANA_PUBLIC_KEY);
+
+    // ============================================================
+    // STEP 0: Load token config from database (CA, burn address)
+    // This makes the system flexible - you can change CA anytime!
+    // ============================================================
+    const { data: tokenConfigData, error: configError } = await supabase
+      .from('token_config')
+      .select('mint_address, burn_address')
+      .eq('is_active', true)
+      .limit(1)
+      .single();
+
+    if (configError || !tokenConfigData) {
+      console.error('Failed to load token config:', configError);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'No active token configuration found. Please set up token_config first.'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Build config object that gets passed to all functions
+    const config: TokenConfig = {
+      tokenMint: tokenConfigData.mint_address,
+      burnAddress: tokenConfigData.burn_address,
+      excludedWallets: [
+        SOLANA_PUBLIC_KEY,
+        '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1', // Raydium
+        'CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM', // Pump Curve
+        tokenConfigData.burn_address,
+      ],
+    };
+    
+    console.log('Token CA:', config.tokenMint);
+    console.log('Burn address:', config.burnAddress);
 
     // ============================================================
     // MUTEX LOCK: Prevent multiple simultaneous flip attempts
@@ -80,7 +112,7 @@ serve(async (req) => {
     const devBalanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Dev wallet balance BEFORE claim:', devBalanceBefore, 'SOL');
     
-    const claimResult = await claimCreatorFees();
+    const claimResult = await claimCreatorFees(config.tokenMint);
     if (claimResult.success) {
       console.log('✅ Claimed fees, tx:', claimResult.signature);
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -94,7 +126,7 @@ serve(async (req) => {
     const claimedFees = Math.max(0, devBalanceAfter - devBalanceBefore);
     console.log('💰 Newly claimed fees:', claimedFees, 'SOL');
 
-    // Minimum threshold - need at least 0.005 SOL claimed to proceed
+    // Minimum threshold
     const MIN_CLAIMED_FEES = 0.005;
     if (claimedFees < MIN_CLAIMED_FEES) {
       console.log(`🛑 Not enough fees claimed: ${claimedFees} SOL (need ${MIN_CLAIMED_FEES} SOL)`);
@@ -108,7 +140,6 @@ serve(async (req) => {
       });
     }
 
-    // Reserve some for tx fees, use the rest
     const amountToUse = Math.floor((claimedFees - 0.002) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse, 'SOL');
 
@@ -127,7 +158,6 @@ serve(async (req) => {
     const result = Math.random() < 0.5 ? 'burn' : 'holder';
     console.log('🎲 FLIP RESULT:', result.toUpperCase());
 
-    // Create flip record
     const { data: flipRecord, error: insertError } = await supabase
       .from('flip_history')
       .insert({
@@ -158,21 +188,17 @@ serve(async (req) => {
       console.log('Step 2: Transfer bought tokens to burn address');
       
       try {
-        // Buy tokens using dev wallet's SOL (the claimed fees)
-        const buyResult = await buyTokensFromDevWallet(amountToUse);
+        const buyResult = await buyTokensFromDevWallet(amountToUse, config.tokenMint);
         console.log('✅ Buy tx:', buyResult.signature);
         
-        // Wait for token account to update
         await new Promise(resolve => setTimeout(resolve, 3000));
         
-        // Get token balance in dev wallet
-        const tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, TOKEN_MINT);
+        const tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, config.tokenMint);
         console.log('💰 Dev wallet has', tokenBalance.toLocaleString(), 'tokens to burn');
         
         if (tokenBalance > 0) {
-          // Transfer ALL tokens from dev wallet to burn address
           console.log('🔥 Transferring tokens to burn address...');
-          const burnTx = await transferTokensFromDevWallet(BURN_ADDRESS, tokenBalance);
+          const burnTx = await transferTokensFromDevWallet(config.burnAddress, tokenBalance, config.tokenMint);
           txHash = burnTx;
           tokensAmount = tokenBalance;
           console.log('🔥 Burn tx:', burnTx);
@@ -182,7 +208,6 @@ serve(async (req) => {
           console.log('⚠️ No tokens received, using buy tx as reference');
         }
         
-        // Discord notification
         await sendDiscordNotification(DISCORD_WEBHOOK_BURNS, {
           embeds: [{
             title: '🔥 BUYBACK & BURN',
@@ -190,6 +215,7 @@ serve(async (req) => {
             fields: [
               { name: 'SOL Used', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
               { name: 'Tokens Burned', value: `${tokensAmount?.toLocaleString() || '0'}`, inline: true },
+              { name: 'Token CA', value: `\`${config.tokenMint.slice(0, 8)}...\``, inline: true },
               { name: 'Transaction', value: txHash ? `[View on Solscan](https://solscan.io/tx/${txHash})` : 'N/A', inline: false },
             ],
             timestamp: new Date().toISOString(),
@@ -216,8 +242,7 @@ serve(async (req) => {
       console.log('Flow: Dev → HotWallet1 → HotWallet2 → Holder');
       
       try {
-        // Get eligible holders (no >50M holders)
-        const holders = await getTokenHolders();
+        const holders = await getTokenHolders(config);
         if (holders.length === 0) {
           throw new Error('No eligible token holders found');
         }
@@ -227,12 +252,10 @@ serve(async (req) => {
           console.log(`  ${i + 1}. ${h.address} - ${h.balance.toLocaleString()} tokens`);
         });
 
-        // Select random holder (weighted by balance)
         recipientWallet = selectRandomHolder(holders);
         console.log('🎯 Selected winner:', recipientWallet);
         
-        // SAFETY CHECK: Verify winner is valid
-        if (EXCLUDED_WALLETS.includes(recipientWallet)) {
+        if (config.excludedWallets.includes(recipientWallet)) {
           throw new Error(`SAFETY BLOCK: Selected winner is in EXCLUDED_WALLETS!`);
         }
         
@@ -246,15 +269,14 @@ serve(async (req) => {
         
         console.log(`✅ Winner verified: ${winnerInfo.balance.toLocaleString()} tokens`);
 
-        // Get or create TWO hot wallets for multi-hop
+        // Create TWO FRESH hot wallets for this flip (no reuse)
         const hotWallet1 = await createNewHotWallet(supabase, 'hot_wallet_1');
         const hotWallet2 = await createNewHotWallet(supabase, 'hot_wallet_2');
         
         console.log('Hot Wallet 1:', hotWallet1.address);
         console.log('Hot Wallet 2:', hotWallet2.address);
 
-        // Calculate amounts (account for tx fees at each hop)
-        const txFee = 0.000005; // ~5000 lamports per tx
+        const txFee = 0.000005;
         const hop1Amount = amountToUse;
         const hop2Amount = hop1Amount - txFee;
         const finalAmount = hop2Amount - txFee;
@@ -279,7 +301,6 @@ serve(async (req) => {
         txHash = hop3Tx;
         console.log('✅ Final tx:', hop3Tx);
 
-        // Update flip record with hot wallets used
         await supabase
           .from('flip_history')
           .update({ 
@@ -287,7 +308,6 @@ serve(async (req) => {
           })
           .eq('id', flipRecord.id);
 
-        // Discord notification
         await sendDiscordNotification(DISCORD_WEBHOOK_WINNERS, {
           embeds: [{
             title: '💎 HOLDER WINS!',
@@ -313,7 +333,6 @@ serve(async (req) => {
       }
     }
 
-    // Update flip record as completed
     await supabase
       .from('flip_history')
       .update({
@@ -324,7 +343,6 @@ serve(async (req) => {
       })
       .eq('id', flipRecord.id);
 
-    // Wallet flow notification
     await sendDiscordNotification(DISCORD_WEBHOOK_WALLET, {
       embeds: [{
         title: result === 'burn' ? '🔥 Flip Complete - BURN' : '💎 Flip Complete - HOLDER',
@@ -333,6 +351,7 @@ serve(async (req) => {
           { name: 'Claimed Fees', value: `${claimedFees.toFixed(4)} SOL`, inline: true },
           { name: 'Amount Used', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
           { name: 'Result', value: result.toUpperCase(), inline: true },
+          { name: 'Token CA', value: `\`${config.tokenMint.slice(0, 8)}...\``, inline: true },
           { name: 'Transaction', value: txHash ? `[View on Solscan](https://solscan.io/tx/${txHash})` : 'N/A', inline: false },
         ],
         timestamp: new Date().toISOString(),
@@ -349,6 +368,7 @@ serve(async (req) => {
       amountUsed: amountToUse,
       tokensAmount,
       recipientWallet,
+      tokenMint: config.tokenMint,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -368,7 +388,7 @@ serve(async (req) => {
 
 // ============= PumpPortal Functions =============
 
-async function claimCreatorFees(): Promise<{ success: boolean; signature?: string }> {
+async function claimCreatorFees(tokenMint: string): Promise<{ success: boolean; signature?: string }> {
   try {
     console.log('Calling PumpPortal to collect creator fees...');
     
@@ -378,7 +398,7 @@ async function claimCreatorFees(): Promise<{ success: boolean; signature?: strin
       body: JSON.stringify({
         publicKey: SOLANA_PUBLIC_KEY,
         action: 'collectCreatorFee',
-        mint: TOKEN_MINT,
+        mint: tokenMint,
       }),
     });
 
@@ -401,7 +421,7 @@ async function claimCreatorFees(): Promise<{ success: boolean; signature?: strin
   }
 }
 
-async function buyTokensFromDevWallet(amountSol: number): Promise<{ signature: string }> {
+async function buyTokensFromDevWallet(amountSol: number, tokenMint: string): Promise<{ signature: string }> {
   console.log(`Buying tokens with ${amountSol} SOL from dev wallet via PumpPortal...`);
   
   const response = await fetch(PUMPPORTAL_API, {
@@ -410,7 +430,7 @@ async function buyTokensFromDevWallet(amountSol: number): Promise<{ signature: s
     body: JSON.stringify({
       publicKey: SOLANA_PUBLIC_KEY,
       action: 'buy',
-      mint: TOKEN_MINT,
+      mint: tokenMint,
       amount: amountSol,
       denominatedInSol: 'true',
       slippage: 25,
@@ -462,7 +482,7 @@ async function getTokenBalance(walletAddress: string, mintAddress: string): Prom
   }
 }
 
-async function transferTokensFromDevWallet(toAddress: string, amount: number): Promise<string> {
+async function transferTokensFromDevWallet(toAddress: string, amount: number, tokenMint: string): Promise<string> {
   const { 
     Connection, 
     PublicKey, 
@@ -484,7 +504,7 @@ async function transferTokensFromDevWallet(toAddress: string, amount: number): P
   const keypair = Keypair.fromSecretKey(privateKeyBytes);
   const fromPubkey = keypair.publicKey;
   
-  const mintPubkey = new PublicKey(TOKEN_MINT);
+  const mintPubkey = new PublicKey(tokenMint);
   const toPubkey = new PublicKey(toAddress);
   
   const fromTokenAccount = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
@@ -492,7 +512,6 @@ async function transferTokensFromDevWallet(toAddress: string, amount: number): P
   
   const transaction = new Transaction();
   
-  // Check if destination token account exists
   const toAccountInfo = await connection.getAccountInfo(toTokenAccount);
   if (!toAccountInfo) {
     console.log('Creating token account for burn address...');
@@ -712,7 +731,7 @@ async function getWalletBalance(address: string): Promise<number> {
 
 // ============= Token Holders =============
 
-async function getTokenHolders(): Promise<TokenHolder[]> {
+async function getTokenHolders(config: TokenConfig): Promise<TokenHolder[]> {
   const response = await fetch(HELIUS_RPC, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -720,7 +739,7 @@ async function getTokenHolders(): Promise<TokenHolder[]> {
       jsonrpc: '2.0',
       id: 1,
       method: 'getTokenLargestAccounts',
-      params: [TOKEN_MINT],
+      params: [config.tokenMint],
     }),
   });
 
@@ -752,15 +771,13 @@ async function getTokenHolders(): Promise<TokenHolder[]> {
 
     if (!owner) continue;
     
-    // Skip excluded wallets
-    if (EXCLUDED_WALLETS.includes(owner)) {
+    if (config.excludedWallets.includes(owner)) {
       console.log(`🚫 Excluding (excluded list): ${owner}`);
       continue;
     }
     
     if (balance <= 0) continue;
 
-    // Skip wallets with >50M tokens
     if (balance > MAX_ELIGIBLE_BALANCE) {
       console.log(`🚫 Excluding (>50M tokens): ${owner} - ${balance.toLocaleString()}`);
       continue;
@@ -794,7 +811,7 @@ function selectRandomHolder(holders: TokenHolder[]): string {
 // ============= Hot Wallet Management =============
 
 async function createNewHotWallet(supabase: any, walletName: string): Promise<HotWallet> {
-  // ALWAYS generate a new wallet for each flip to avoid bundling
+  // ALWAYS generate a fresh wallet for each flip (no reuse = no bundling)
   console.log(`🆕 Generating fresh ${walletName}...`);
   const { Keypair } = await import("https://esm.sh/@solana/web3.js@1.87.6");
   const newKeypair = Keypair.generate();
@@ -804,11 +821,11 @@ async function createNewHotWallet(supabase: any, walletName: string): Promise<Ho
   
   console.log(`Fresh ${walletName}:`, newAddress);
 
-  // Store for record keeping (but won't reuse)
+  // Store for record keeping
   await supabase.from('hot_wallets').insert({
     wallet_address: newAddress,
     private_key_encrypted: privateKeyBase58,
-    is_active: false, // Mark inactive immediately since it's one-time use
+    is_active: false,
   });
 
   return {
