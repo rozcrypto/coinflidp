@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +51,7 @@ const Index = () => {
   const [totalToHoldersSol, setTotalToHoldersSol] = useState(0);
   const [devRewardsSol, setDevRewardsSol] = useState(0);
   const [lastFlipTime, setLastFlipTime] = useState<Date | null>(null);
+  const lastFlipRequestAtRef = useRef<number | null>(null);
   const { toast } = useToast();
 
   // Load initial data from database
@@ -250,13 +251,26 @@ const Index = () => {
   const performFlip = useCallback(async () => {
     if (isFlipping) return;
 
+    const now = Date.now();
+    const lastRequestAt = lastFlipRequestAtRef.current;
+    const minIntervalMs = FLIP_INTERVAL * 1000;
+
+    if (lastRequestAt && now - lastRequestAt < minIntervalMs) {
+      return;
+    }
+    if (lastFlipTime && now - lastFlipTime.getTime() < minIntervalMs) {
+      return;
+    }
+
+    lastFlipRequestAtRef.current = now;
+
     setIsFlipping(true);
     setShowResult(false);
     setCurrentResult(null);
 
     try {
       const { data, error } = await supabase.functions.invoke('coin-flip');
-      
+
       if (error) {
         console.error('Flip error:', error);
         toast({
@@ -279,7 +293,7 @@ const Index = () => {
       });
       setIsFlipping(false);
     }
-  }, [isFlipping, toast]);
+  }, [isFlipping, lastFlipTime, toast]);
 
   // Timer complete handler - triggers automatic flip
   const handleTimerComplete = useCallback(() => {

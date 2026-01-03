@@ -89,7 +89,7 @@ serve(async (req) => {
     // ============================================================
     const { data: tokenConfigData, error: configError } = await supabase
       .from('token_config')
-      .select('mint_address, burn_address')
+      .select('mint_address, burn_address, flip_interval_seconds')
       .eq('is_active', true)
       .limit(1)
       .single();
@@ -119,6 +119,8 @@ serve(async (req) => {
       });
     }
 
+    const flipIntervalSeconds = Number(tokenConfigData.flip_interval_seconds || 120);
+
     // Build config object that gets passed to all functions
     const config: TokenConfig = {
       tokenMint: tokenConfigData.mint_address,
@@ -130,9 +132,10 @@ serve(async (req) => {
         tokenConfigData.burn_address,
       ],
     };
-    
+
     console.log('Token CA:', config.tokenMint);
     console.log('Burn address:', config.burnAddress);
+    console.log('Flip interval (seconds):', flipIntervalSeconds);
 
     // ============================================================
     // MUTEX LOCK: Prevent multiple simultaneous flip attempts
@@ -152,6 +155,30 @@ serve(async (req) => {
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // ============================================================
+    // COOLDOWN: Enforce a minimum interval between flips globally
+    // ============================================================
+    const { data: lastFlip } = await supabase
+      .from('flip_history')
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastFlip?.created_at) {
+      const msSinceLastFlip = Date.now() - new Date(lastFlip.created_at).getTime();
+      if (msSinceLastFlip < flipIntervalSeconds * 1000) {
+        console.log('⏳ COOLDOWN: Too soon since last flip:', msSinceLastFlip, 'ms');
+        return new Response(JSON.stringify({
+          success: false,
+          message: `Cooldown active. Next flip in ${Math.max(0, Math.ceil((flipIntervalSeconds * 1000 - msSinceLastFlip) / 1000))}s`,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // ============================================================
