@@ -44,35 +44,45 @@ serve(async (req) => {
     console.log('=== Starting Coin Flip Round ===');
     console.log('Creator wallet:', SOLANA_PUBLIC_KEY);
 
-    // Step 1: Claim creator fees from PumpPortal
-    console.log('Step 1: Claiming creator fees...');
+    // Step 1: Get balance BEFORE claiming fees
+    const balanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Balance BEFORE claiming:', balanceBefore);
+
+    // Step 2: Claim creator fees from PumpPortal
+    console.log('Step 2: Claiming creator fees...');
     const claimedFees = await claimCreatorFees();
     console.log('Claimed fees result:', claimedFees);
 
-    // Step 2: Get wallet balance
-    const solBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Current SOL balance:', solBalance);
+    // Step 3: Get balance AFTER claiming fees
+    const balanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Balance AFTER claiming:', balanceAfter);
 
-    // Minimum threshold to proceed (0.005 SOL minimum)
-    if (solBalance < 0.005) {
-      console.log('Insufficient balance for flip, skipping round');
+    // CRITICAL: Only use the DIFFERENCE (actual claimed fees), not total balance
+    // This protects the wallet from draining existing funds
+    const actualClaimedAmount = Math.max(0, balanceAfter - balanceBefore);
+    console.log('Actual claimed amount:', actualClaimedAmount);
+
+    // Minimum threshold to proceed (0.001 SOL minimum claimed)
+    if (actualClaimedAmount < 0.001) {
+      console.log('No new fees claimed, skipping round');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Insufficient balance for this round',
-        balance: solBalance
+        message: 'No creator fees to claim this round',
+        claimedAmount: actualClaimedAmount
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Calculate amounts (90% for action, 10% for tx fees buffer)
-    const amountToUse = Math.floor((solBalance * 0.9) * 1000) / 1000;
+    // Use 90% of CLAIMED FEES ONLY (reserve 10% for tx fees)
+    const amountToUse = Math.floor((actualClaimedAmount * 0.9) * 1000) / 1000;
+    console.log('Amount to use for flip:', amountToUse);
     
     if (amountToUse <= 0) {
-      console.log('No funds available after reserving tx fees');
+      console.log('Claimed amount too small after tx fee reserve');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'No funds available after tx fee reserve' 
+        message: 'Claimed fees too small after tx fee reserve' 
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
