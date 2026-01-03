@@ -2,12 +2,12 @@ import { ExternalLink, Trophy, Flame, Clock, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface WinnerRecord {
-  id: number;
+  id: string | number;
   type: "burn" | "holder";
   wallet?: string;
   amount: number;
   solAmount?: number;
-  txHash: string;
+  txHash?: string;
   timestamp: Date;
 }
 
