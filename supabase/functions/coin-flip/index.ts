@@ -45,35 +45,42 @@ serve(async (req) => {
     console.log('Creator wallet:', SOLANA_PUBLIC_KEY);
 
     // ============================================================
-    // CRITICAL SAFETY: Record initial balance - we will NEVER touch this
+    // CRITICAL: ONLY proceed if claimCreatorFees API call succeeds
+    // We NEVER touch any existing balance - only newly claimed fees
     // ============================================================
-    const INITIAL_BALANCE = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('🔒 PROTECTED INITIAL BALANCE:', INITIAL_BALANCE, 'SOL');
-
-    // Step 1: Claim creator fees from PumpPortal
-    console.log('Step 1: Claiming creator fees...');
+    
+    // Step 1: Try to claim creator fees from PumpPortal
+    console.log('Step 1: Attempting to claim creator fees from PumpPortal API...');
     const claimedFees = await claimCreatorFees();
     console.log('Claimed fees result:', claimedFees);
 
-    // Step 2: Get balance AFTER claiming fees
-    const balanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Balance AFTER claiming:', balanceAfter);
-
     // ============================================================
-    // CRITICAL: Calculate ONLY the newly claimed amount
-    // This is the ONLY SOL we are allowed to use
+    // HARD STOP: If claim failed or no claimedAmount, DO NOTHING
+    // This ensures we NEVER touch dev buy/sell profits or existing balance
     // ============================================================
-    const actualClaimedAmount = Math.max(0, balanceAfter - INITIAL_BALANCE);
-    console.log('💰 Actual claimed amount (ONLY this can be used):', actualClaimedAmount);
-
-    // Minimum threshold to proceed (0.001 SOL minimum claimed)
-    if (actualClaimedAmount < 0.001) {
-      console.log('No new fees claimed, skipping round - PROTECTING WALLET');
+    if (!claimedFees.success || !claimedFees.claimedAmount || claimedFees.claimedAmount <= 0) {
+      console.log('🛑 NO CREATOR FEES CLAIMED - STOPPING COMPLETELY');
+      console.log('   This protects: existing balance, dev buy profits, dev sell profits');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'No creator fees to claim this round',
-        claimedAmount: actualClaimedAmount,
-        protectedBalance: INITIAL_BALANCE
+        message: 'No creator fees claimed from PumpPortal API - wallet untouched',
+        claimResult: claimedFees
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // We have a verified claimed amount from the API
+    const actualClaimedAmount = claimedFees.claimedAmount;
+    console.log('💰 VERIFIED claimed amount from API:', actualClaimedAmount, 'SOL');
+
+    // Minimum threshold (0.001 SOL)
+    if (actualClaimedAmount < 0.001) {
+      console.log('Claimed amount too small, skipping round');
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Creator fees too small this round',
+        claimedAmount: actualClaimedAmount
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -83,9 +90,7 @@ serve(async (req) => {
     const amountToUse = Math.floor((actualClaimedAmount * 0.9) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse);
 
-    // ============================================================
-    // SAFETY CHECK: Verify we're not using more than claimed
-    // ============================================================
+    // Safety check: never use more than what was claimed
     if (amountToUse > actualClaimedAmount) {
       console.error('🚫 SAFETY BLOCK: Attempted to use more than claimed!');
       return new Response(JSON.stringify({ 
@@ -93,24 +98,6 @@ serve(async (req) => {
         message: 'Safety block: amount exceeds claimed fees',
         attempted: amountToUse,
         claimed: actualClaimedAmount
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ============================================================
-    // SAFETY CHECK: Ensure we never drain below initial balance
-    // ============================================================
-    const expectedBalanceAfterFlip = balanceAfter - amountToUse - 0.001; // 0.001 for tx fee
-    if (expectedBalanceAfterFlip < INITIAL_BALANCE - 0.002) { // 0.002 tolerance for tx fees
-      console.error('🚫 SAFETY BLOCK: Would drain below initial balance!');
-      console.error(`Initial: ${INITIAL_BALANCE}, After: ${balanceAfter}, Using: ${amountToUse}, Expected: ${expectedBalanceAfterFlip}`);
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: 'Safety block: would reduce balance below initial',
-        initialBalance: INITIAL_BALANCE,
-        currentBalance: balanceAfter,
-        attemptedUse: amountToUse
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -127,8 +114,7 @@ serve(async (req) => {
     }
 
     console.log('✅ Safety checks passed. Proceeding with flip...');
-    console.log(`   Initial Balance: ${INITIAL_BALANCE} SOL`);
-    console.log(`   Claimed Amount: ${actualClaimedAmount} SOL`);
+    console.log(`   Verified Claimed Amount: ${actualClaimedAmount} SOL`);
     console.log(`   Using for Flip: ${amountToUse} SOL`);
 
     // Step 3: Flip the coin (50/50)
@@ -310,9 +296,13 @@ serve(async (req) => {
 
 // ============= PumpPortal Functions =============
 
-async function claimCreatorFees(): Promise<{ success: boolean; signature?: string }> {
+async function claimCreatorFees(): Promise<{ success: boolean; signature?: string; claimedAmount?: number }> {
   try {
     console.log('Calling PumpPortal to collect creator fees...');
+    
+    // Record balance BEFORE claiming (to calculate exact claimed amount)
+    const balanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Balance BEFORE claim:', balanceBefore, 'SOL');
     
     const response = await fetch(PUMPPORTAL_API, {
       method: 'POST',
@@ -327,7 +317,7 @@ async function claimCreatorFees(): Promise<{ success: boolean; signature?: strin
     if (!response.ok) {
       const errorText = await response.text();
       console.log('PumpPortal fee claim response:', errorText);
-      return { success: false };
+      return { success: false, claimedAmount: 0 };
     }
 
     // Get the transaction to sign
@@ -341,10 +331,27 @@ async function claimCreatorFees(): Promise<{ success: boolean; signature?: strin
     // Wait for confirmation
     await confirmTransaction(signature);
     
-    return { success: true, signature };
+    // Wait a moment for balance to update
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Record balance AFTER claiming
+    const balanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Balance AFTER claim:', balanceAfter, 'SOL');
+    
+    // Calculate the EXACT amount claimed (including tx fee deduction)
+    // The claimed amount is the increase in balance
+    const claimedAmount = Math.max(0, balanceAfter - balanceBefore);
+    console.log('💰 Exact claimed amount:', claimedAmount, 'SOL');
+    
+    if (claimedAmount <= 0) {
+      console.log('Claim tx succeeded but no SOL increase detected');
+      return { success: false, signature, claimedAmount: 0 };
+    }
+    
+    return { success: true, signature, claimedAmount };
   } catch (error) {
     console.log('Fee claim skipped or failed:', error);
-    return { success: false };
+    return { success: false, claimedAmount: 0 };
   }
 }
 
