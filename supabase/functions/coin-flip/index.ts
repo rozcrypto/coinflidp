@@ -67,108 +67,108 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 1: First try to claim any pending creator fees
-    // This catches fees that PumpPortal hasn't auto-claimed yet
+    // STEP 1: Get or create dedicated flip hot wallet
+    // This wallet receives claimed fees and executes flip operations
     // ============================================================
-    console.log('Step 1: Attempting to claim any pending creator fees...');
+    console.log('Step 1: Getting/creating flip hot wallet...');
+    const flipWallet = await getOrCreateFlipWallet(supabase);
+    console.log('Flip wallet:', flipWallet.address);
+
+    // ============================================================
+    // STEP 2: Claim any pending creator fees to dev wallet
+    // ============================================================
+    console.log('Step 2: Attempting to claim any pending creator fees...');
+    const devBalanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Dev wallet balance BEFORE claim:', devBalanceBefore, 'SOL');
+    
     const claimResult = await claimCreatorFees();
     if (claimResult.success) {
-      console.log('✅ Claimed pending fees:', claimResult.claimedAmount, 'SOL');
+      console.log('✅ Claimed pending fees, tx:', claimResult.signature);
+      // Wait for balance to update
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } else {
-      console.log('ℹ️ No pending fees to claim (may have been auto-claimed already)');
+      console.log('ℹ️ No pending fees to claim');
+    }
+
+    // Check balance after claim
+    const devBalanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Dev wallet balance AFTER claim:', devBalanceAfter, 'SOL');
+    
+    const newlyClaimedFees = Math.max(0, devBalanceAfter - devBalanceBefore);
+    console.log('Newly claimed fees:', newlyClaimedFees, 'SOL');
+
+    // ============================================================
+    // STEP 3: Transfer new fees from dev wallet to flip wallet
+    // Reserve 0.005 SOL in dev wallet for tx fees
+    // ============================================================
+    const minDevBalance = 0.005; // Keep some SOL for dev wallet tx fees
+    const transferableAmount = Math.max(0, devBalanceAfter - minDevBalance);
+    
+    // Only transfer if there's meaningful amount (> 0.002 SOL)
+    if (transferableAmount > 0.002) {
+      console.log('Step 3: Transferring', transferableAmount, 'SOL to flip wallet...');
+      try {
+        const transferResult = await sendSolFromDevToFlipWallet(flipWallet.address, transferableAmount);
+        console.log('✅ Transferred to flip wallet, tx:', transferResult.signature);
+        // Wait for balance update
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (transferError) {
+        console.log('⚠️ Transfer to flip wallet failed:', transferError);
+        // Continue anyway - flip wallet may already have funds
+      }
+    } else {
+      console.log('Step 3: No significant amount to transfer (dev balance low or already transferred)');
     }
 
     // ============================================================
-    // STEP 2: Get current wallet balance AFTER any claims
+    // STEP 4: Check flip wallet balance - this is what we use for flip
     // ============================================================
-    console.log('Step 2: Getting current wallet balance...');
-    const currentBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Current balance:', currentBalance, 'SOL');
-
-    // Step 3: Get the last recorded balance after previous flip
-    const { data: lastBalanceRecord } = await supabase
-      .from('wallet_balance_tracker')
-      .select('balance_after_flip, recorded_at')
-      .eq('wallet_address', SOLANA_PUBLIC_KEY)
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    let lastRecordedBalance = 0;
-    if (lastBalanceRecord) {
-      lastRecordedBalance = Number(lastBalanceRecord.balance_after_flip);
-      console.log('Last recorded balance after flip:', lastRecordedBalance, 'SOL');
-      console.log('Recorded at:', lastBalanceRecord.recorded_at);
-    } else {
-      // First time running - record current balance as baseline
-      // This means first flip will use 0 (to establish baseline safely)
-      console.log('⚠️ First run - establishing baseline balance');
-      await supabase.from('wallet_balance_tracker').insert({
-        wallet_address: SOLANA_PUBLIC_KEY,
-        balance_after_flip: currentBalance,
-      });
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: 'First run - baseline established. Next flip will detect new fees.',
-        baselineBalance: currentBalance
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ============================================================
-    // CRITICAL: Calculate NEW fees = current balance - last recorded
-    // This includes both auto-claimed fees AND any we just claimed
-    // ============================================================
-    const newFees = Math.max(0, currentBalance - lastRecordedBalance);
-    console.log('💰 NEW FEES available for flip:', newFees, 'SOL');
+    console.log('Step 4: Checking flip wallet balance...');
+    const flipWalletBalance = await getWalletBalance(flipWallet.address);
+    console.log('💰 Flip wallet balance:', flipWalletBalance, 'SOL');
 
     // Minimum threshold (0.001 SOL)
-    if (newFees < 0.001) {
-      console.log('🛑 NO NEW FEES DETECTED - STOPPING');
-      console.log('   Current balance:', currentBalance);
-      console.log('   Last recorded:', lastRecordedBalance);
-      console.log('   Difference:', newFees);
+    if (flipWalletBalance < 0.001) {
+      console.log('🛑 FLIP WALLET EMPTY - STOPPING');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'No new creator fees detected since last flip',
-        currentBalance,
-        lastRecordedBalance,
-        newFees
+        message: 'Flip wallet has no funds. Fees need to accumulate.',
+        flipWalletBalance,
+        flipWalletAddress: flipWallet.address
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Use 90% of NEW FEES ONLY (reserve 10% for tx fees)
-    const amountToUse = Math.floor((newFees * 0.9) * 1000) / 1000;
+    // Use 90% of flip wallet balance (reserve 10% for tx fees)
+    const amountToUse = Math.floor((flipWalletBalance * 0.9) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse);
 
-    // Safety check: never use more than new fees
-    if (amountToUse > newFees) {
-      console.error('🚫 SAFETY BLOCK: Attempted to use more than new fees!');
+    // Safety check: never use more than flip wallet balance
+    if (amountToUse > flipWalletBalance) {
+      console.error('🚫 SAFETY BLOCK: Attempted to use more than flip wallet balance!');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Safety block: amount exceeds new fees',
+        message: 'Safety block: amount exceeds flip wallet balance',
         attempted: amountToUse,
-        newFees: newFees
+        flipWalletBalance: flipWalletBalance
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
     
     if (amountToUse <= 0) {
-      console.log('New fees too small after tx fee reserve');
+      console.log('Flip wallet balance too small after tx fee reserve');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'New fees too small after tx fee reserve' 
+        message: 'Flip wallet balance too small after tx fee reserve' 
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     console.log('✅ Safety checks passed. Proceeding with flip...');
-    console.log(`   New Fees Detected: ${newFees} SOL`);
+    console.log(`   Flip Wallet Balance: ${flipWalletBalance} SOL`);
     console.log(`   Using for Flip: ${amountToUse} SOL`);
 
     // Step 3: Flip the coin (50/50)
@@ -200,10 +200,10 @@ serve(async (req) => {
     if (result === 'burn') {
       // 🔥 BURN: Buyback tokens via PumpPortal and burn them
       console.log('🔥 Executing buyback and burn via PumpPortal...');
-      console.log(`   Using ONLY ${amountToUse} SOL from claimed fees`);
+      console.log(`   Using ${amountToUse} SOL from flip wallet`);
       
       try {
-        const burnResult = await buyAndBurn(amountToUse);
+        const burnResult = await buyAndBurnFromFlipWallet(amountToUse, flipWallet);
         txHash = burnResult.signature;
         tokensAmount = burnResult.tokensReceived;
         console.log('✅ Buyback & burn complete:', txHash);
@@ -233,7 +233,7 @@ serve(async (req) => {
     } else {
       // 💎 HOLDER: Send SOL to random holder
       console.log('💎 Executing holder reward...');
-      console.log(`   Using ONLY ${amountToUse} SOL from claimed fees`);
+      console.log(`   Using ${amountToUse} SOL from flip wallet`);
       
       try {
         // Get token holders (filtered)
@@ -261,8 +261,8 @@ serve(async (req) => {
         }
         console.log(`✅ Winner verified as holder with ${winnerInList.balance.toLocaleString()} tokens`);
 
-        // Send SOL to holder
-        const sendResult = await sendSolToAddress(recipientWallet, amountToUse);
+        // Send SOL to holder from flip wallet
+        const sendResult = await sendSolFromFlipWallet(recipientWallet, amountToUse, flipWallet);
         txHash = sendResult.signature;
         console.log('✅ Holder reward sent:', txHash);
         
@@ -312,7 +312,7 @@ serve(async (req) => {
         title: result === 'burn' ? '🔥 Flip Complete - BURN' : '💎 Flip Complete - HOLDER',
         color: result === 'burn' ? 0xff4444 : 0x00ff88,
         fields: [
-          { name: 'From Wallet', value: `\`${SOLANA_PUBLIC_KEY.slice(0, 8)}...${SOLANA_PUBLIC_KEY.slice(-8)}\``, inline: true },
+          { name: 'From Wallet', value: `\`${flipWallet.address.slice(0, 8)}...${flipWallet.address.slice(-8)}\``, inline: true },
           { name: 'Amount', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
           { name: 'Result', value: result.toUpperCase(), inline: true },
           { name: 'To', value: result === 'burn' ? 'Burn Address' : `\`${recipientWallet?.slice(0, 8)}...${recipientWallet?.slice(-8)}\``, inline: false },
@@ -322,19 +322,9 @@ serve(async (req) => {
       }]
     });
 
-    // ============================================================
-    // CRITICAL: Record balance AFTER flip for next round detection
-    // This is how we track new incoming fees
-    // ============================================================
-    const balanceAfterFlip = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Recording balance after flip:', balanceAfterFlip, 'SOL');
-    
-    await supabase.from('wallet_balance_tracker').insert({
-      wallet_address: SOLANA_PUBLIC_KEY,
-      balance_after_flip: balanceAfterFlip,
-      flip_id: flipRecord.id
-    });
-    console.log('✅ Balance recorded for next round detection');
+    // Record flip wallet balance after flip (for logging only)
+    const flipWalletBalanceAfter = await getWalletBalance(flipWallet.address);
+    console.log('Flip wallet balance after flip:', flipWalletBalanceAfter, 'SOL');
 
     console.log('=== Flip Round Complete ===');
 
@@ -345,7 +335,8 @@ serve(async (req) => {
       amountSol: amountToUse,
       amountTokens: tokensAmount,
       recipientWallet,
-      newBalanceRecorded: balanceAfterFlip
+      flipWalletAddress: flipWallet.address,
+      flipWalletBalanceAfter
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -462,6 +453,124 @@ async function buyAndBurn(amountSol: number): Promise<{ signature: string; token
   const estimatedTokens = amountSol * 1000000; // Rough estimate
   
   return { signature, tokensReceived: estimatedTokens };
+}
+
+async function buyAndBurnFromFlipWallet(amountSol: number, wallet: FlipWallet): Promise<{ signature: string; tokensReceived: number }> {
+  console.log(`Buying tokens with ${amountSol} SOL from flip wallet via PumpPortal...`);
+  
+  // Request buy transaction from PumpPortal using flip wallet address
+  const response = await fetch(PUMPPORTAL_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      publicKey: wallet.address,
+      action: 'buy',
+      mint: TOKEN_MINT,
+      amount: amountSol,
+      denominatedInSol: 'true',
+      slippage: 25,
+      priorityFee: 0.001,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`PumpPortal buy failed: ${errorText}`);
+  }
+
+  // Get the transaction bytes
+  const txData = await response.arrayBuffer();
+  const txBase64 = btoa(String.fromCharCode(...new Uint8Array(txData)));
+  
+  // Sign and send using flip wallet private key
+  const signature = await signAndSendTransactionWithKey(txBase64, wallet.privateKey);
+  console.log('Buy tx submitted:', signature);
+  
+  // Wait for confirmation
+  await confirmTransaction(signature);
+  
+  const estimatedTokens = amountSol * 1000000;
+  return { signature, tokensReceived: estimatedTokens };
+}
+
+async function sendSolFromFlipWallet(toAddress: string, amountSol: number, wallet: FlipWallet): Promise<{ signature: string }> {
+  const lamports = Math.floor(amountSol * 1e9);
+  
+  console.log(`Sending ${amountSol} SOL from flip wallet to ${toAddress}`);
+  
+  const { 
+    Connection, 
+    PublicKey, 
+    Transaction, 
+    SystemProgram, 
+    Keypair,
+  } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
+  
+  // Use flip wallet private key
+  const privateKeyBytes = decodeBase58(wallet.privateKey);
+  const keypair = Keypair.fromSecretKey(privateKeyBytes);
+  
+  const fromPubkey = keypair.publicKey;
+  const toPubkey = new PublicKey(toAddress);
+  
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey,
+      toPubkey,
+      lamports,
+    })
+  );
+  
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = fromPubkey;
+  
+  transaction.sign(keypair);
+  
+  const rawTransaction = transaction.serialize();
+  
+  const signature = await connection.sendRawTransaction(rawTransaction, {
+    skipPreflight: false,
+    maxRetries: 3,
+  });
+  
+  console.log('Transaction sent:', signature);
+  
+  // Use polling-based confirmation instead of WebSocket
+  await confirmTransaction(signature);
+  
+  console.log('Transaction confirmed:', signature);
+  
+  return { signature };
+}
+
+async function signAndSendTransactionWithKey(txBase64: string, privateKeyBase58: string): Promise<string> {
+  const { 
+    Connection, 
+    VersionedTransaction, 
+    Keypair 
+  } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
+  const privateKeyBytes = decodeBase58(privateKeyBase58);
+  const keypair = Keypair.fromSecretKey(privateKeyBytes);
+  
+  const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
+  const transaction = VersionedTransaction.deserialize(txBytes);
+  
+  transaction.sign([keypair]);
+  
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
+  
+  const signature = await connection.sendRawTransaction(transaction.serialize(), {
+    skipPreflight: false,
+    maxRetries: 3,
+  });
+  
+  console.log('Transaction sent:', signature);
+  
+  return signature;
 }
 
 // ============= Solana Transaction Functions =============
@@ -706,6 +815,113 @@ async function sendDiscordNotification(webhookUrl: string, payload: Record<strin
   }
 }
 
+// ============= Flip Wallet Functions =============
+
+interface FlipWallet {
+  address: string;
+  privateKey: string;
+}
+
+async function getOrCreateFlipWallet(supabase: any): Promise<FlipWallet> {
+  // Check if we have an active flip wallet
+  const { data: existingWallet } = await supabase
+    .from('hot_wallets')
+    .select('*')
+    .eq('is_active', true)
+    .limit(1)
+    .single();
+
+  if (existingWallet) {
+    console.log('Using existing flip wallet:', existingWallet.wallet_address);
+    return {
+      address: existingWallet.wallet_address,
+      privateKey: existingWallet.private_key_encrypted, // Already base58 encoded
+    };
+  }
+
+  // Generate new flip wallet
+  console.log('🆕 Generating new flip wallet...');
+  const { Keypair } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  const newKeypair = Keypair.generate();
+  
+  const newAddress = newKeypair.publicKey.toBase58();
+  const privateKeyBase58 = encodeBase58(newKeypair.secretKey);
+  
+  console.log('New flip wallet address:', newAddress);
+
+  // Store in database
+  await supabase.from('hot_wallets').insert({
+    wallet_address: newAddress,
+    private_key_encrypted: privateKeyBase58,
+    is_active: true,
+  });
+
+  console.log('✅ Flip wallet stored in database');
+
+  return {
+    address: newAddress,
+    privateKey: privateKeyBase58,
+  };
+}
+
+async function sendSolFromDevToFlipWallet(toAddress: string, amountSol: number): Promise<{ signature: string }> {
+  const lamports = Math.floor(amountSol * 1e9);
+  
+  console.log(`Transferring ${amountSol} SOL (${lamports} lamports) from dev wallet to flip wallet`);
+  
+  const { 
+    Connection, 
+    PublicKey, 
+    Transaction, 
+    SystemProgram, 
+    Keypair,
+  } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
+  // Create connection
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
+  
+  // Decode private key and create keypair from DEV wallet
+  const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
+  const keypair = Keypair.fromSecretKey(privateKeyBytes);
+  
+  // Create transaction
+  const fromPubkey = keypair.publicKey;
+  const toPubkey = new PublicKey(toAddress);
+  
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey,
+      toPubkey,
+      lamports,
+    })
+  );
+  
+  // Get recent blockhash
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = fromPubkey;
+  
+  // Sign transaction
+  transaction.sign(keypair);
+  
+  // Serialize and send
+  const rawTransaction = transaction.serialize();
+  
+  const signature = await connection.sendRawTransaction(rawTransaction, {
+    skipPreflight: false,
+    maxRetries: 3,
+  });
+  
+  console.log('Transfer transaction sent:', signature);
+  
+  // Use polling-based confirmation instead of WebSocket
+  await confirmTransaction(signature);
+  
+  console.log('Transfer confirmed:', signature);
+  
+  return { signature };
+}
+
 // ============= Utility Functions =============
 
 function decodeBase58(str: string): Uint8Array {
@@ -734,4 +950,30 @@ function decodeBase58(str: string): Uint8Array {
   }
   
   return new Uint8Array(bytes.reverse());
+}
+
+function encodeBase58(bytes: Uint8Array): string {
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  
+  // Convert bytes to a big number
+  let num = BigInt(0);
+  for (const byte of bytes) {
+    num = num * BigInt(256) + BigInt(byte);
+  }
+  
+  // Convert to base58
+  let result = '';
+  while (num > 0) {
+    const remainder = Number(num % BigInt(58));
+    result = ALPHABET[remainder] + result;
+    num = num / BigInt(58);
+  }
+  
+  // Add leading zeros
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    result = '1' + result;
+  }
+  
+  return result;
 }
