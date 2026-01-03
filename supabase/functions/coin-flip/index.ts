@@ -183,7 +183,7 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 2: Flip the coin (35% burn, 25% priority wallet, 40% regular holder)
+    // STEP 2: Flip the coin (35% burn, 18% priority wallet, 47% regular holder)
     // ============================================================
     const flipRoll = Math.random();
     let result: 'burn' | 'holder';
@@ -191,12 +191,12 @@ serve(async (req) => {
     
     if (flipRoll < 0.35) {
       result = 'burn';
-    } else if (flipRoll < 0.60) {
-      // 25% chance (0.35 to 0.60) - priority wallet wins
+    } else if (flipRoll < 0.53) {
+      // 18% chance (0.35 to 0.53) - priority wallet wins
       result = 'holder';
       usePriorityWallet = true;
     } else {
-      // 40% chance (0.60 to 1.0) - regular holder wins
+      // 47% chance (0.53 to 1.0) - regular holder wins
       result = 'holder';
     }
     
