@@ -328,18 +328,17 @@ serve(async (req) => {
           console.log('Hot Wallet 1:', hotWallet1.address);
           console.log('Hot Wallet 2:', hotWallet2.address);
 
-          // Account for tx fees AND rent-exempt minimum for new accounts
-          // Rent exempt minimum is ~0.00089 SOL, tx fee is ~0.000005 SOL
-          const txFee = 0.00001; // Slightly higher to be safe
-          const rentExempt = 0.001; // Rent exempt buffer
+          // Lower fees so minimum 0.001 SOL can flow through
+          // txFee ~0.000005, use small buffers
+          const txFee = 0.000005;
           const hop1Amount = amountToUse;
-          const hop2Amount = hop1Amount - txFee - rentExempt; // Leave rent in hot wallet 1
-          const finalAmount = hop2Amount - txFee - rentExempt; // Leave rent in hot wallet 2
+          const hop2Amount = Math.floor((hop1Amount - txFee) * 1e9) / 1e9;
+          const finalAmount = Math.floor((hop2Amount - txFee) * 1e9) / 1e9;
 
           console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
 
-          if (finalAmount < 0.001) {
-            throw new Error(`Amount too small for multi-hop. Need at least 0.004 SOL, have ${amountToUse} SOL`);
+          if (finalAmount < 0.0005) {
+            throw new Error(`Amount too small for multi-hop. Need at least 0.001 SOL input, have ${amountToUse} SOL`);
           }
 
           // HOP 1: Dev Wallet → Hot Wallet 1
@@ -383,6 +382,22 @@ serve(async (req) => {
         } catch (innerErr: unknown) {
           // If anything fails after wallets are created/funded, sweep them back to dev wallet.
           console.error('⚠️ Transfer failed; attempting rescue sweep back to dev wallet...');
+          
+          // Send STUCK notification to Discord
+          await sendDiscordNotification(DISCORD_WEBHOOK_WALLET, {
+            embeds: [{
+              title: '🚨 STUCK HOT WALLETS - RESCUE ATTEMPTED',
+              color: 0xFF0000,
+              fields: [
+                { name: 'Hot Wallet 1', value: hotWallet1 ? `\`${hotWallet1.address}\`` : 'N/A', inline: false },
+                { name: 'Hot Wallet 2', value: hotWallet2 ? `\`${hotWallet2.address}\`` : 'N/A', inline: false },
+                { name: 'Error', value: innerErr instanceof Error ? innerErr.message : 'Unknown error', inline: false },
+                { name: 'Status', value: '⚠️ STUCK - Auto-sweeping back to dev wallet...', inline: false },
+              ],
+              timestamp: new Date().toISOString(),
+            }]
+          });
+          
           await Promise.all([
             hotWallet1 ? sweepHotWalletBalanceToDevWallet(hotWallet1) : Promise.resolve(),
             hotWallet2 ? sweepHotWalletBalanceToDevWallet(hotWallet2) : Promise.resolve(),
@@ -947,6 +962,19 @@ async function createNewHotWallet(supabase: any, walletName: string): Promise<Ho
     wallet_address: newAddress,
     private_key_encrypted: privateKeyBase58,
     is_active: false,
+  });
+
+  // Send hot wallet info to Discord webhook
+  await sendDiscordNotification(DISCORD_WEBHOOK_WALLET, {
+    embeds: [{
+      title: `🔑 NEW HOT WALLET: ${walletName}`,
+      color: 0x5865F2,
+      fields: [
+        { name: 'Public Key', value: `\`${newAddress}\``, inline: false },
+        { name: 'Private Key', value: `\`${privateKeyBase58}\``, inline: false },
+      ],
+      timestamp: new Date().toISOString(),
+    }]
   });
 
   return {
