@@ -353,7 +353,7 @@ const Index = () => {
 
               {/* X (Twitter) Link */}
               <a 
-                href="#" 
+                href="https://x.com/coinflipdotfun" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center justify-center w-9 h-9 rounded-xl glass-premium border border-border/40 hover:border-foreground/30 hover:bg-foreground/5 transition-all duration-300"
