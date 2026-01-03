@@ -136,14 +136,16 @@ serve(async (req) => {
     const flipWalletBalance = await getWalletBalance(flipWallet.address);
     console.log('💰 Flip wallet balance:', flipWalletBalance, 'SOL');
 
-    // Minimum threshold (0.001 SOL)
-    if (flipWalletBalance < 0.001) {
-      console.log('🛑 FLIP WALLET EMPTY - STOPPING');
+    // Minimum threshold (0.01 SOL - need enough for tx fees + rent exemption)
+    const MIN_FLIP_BALANCE = 0.01;
+    if (flipWalletBalance < MIN_FLIP_BALANCE) {
+      console.log(`🛑 FLIP WALLET TOO LOW - Need at least ${MIN_FLIP_BALANCE} SOL, have ${flipWalletBalance} SOL`);
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Flip wallet has no funds. Fees need to accumulate.',
+        message: `Flip wallet needs at least ${MIN_FLIP_BALANCE} SOL. Current: ${flipWalletBalance.toFixed(6)} SOL`,
         flipWalletBalance,
-        flipWalletAddress: flipWallet.address
+        flipWalletAddress: flipWallet.address,
+        minRequired: MIN_FLIP_BALANCE
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -264,12 +266,20 @@ serve(async (req) => {
         recipientWallet = selectRandomHolder(holders);
         console.log('Selected winner:', recipientWallet);
         
-        // Verify the winner is in our holders list
+        // CRITICAL SAFETY CHECK: Verify winner is NOT in excluded wallets
+        if (EXCLUDED_WALLETS.includes(recipientWallet)) {
+          throw new Error(`SAFETY BLOCK: Selected winner ${recipientWallet} is in EXCLUDED_WALLETS list!`);
+        }
+        
+        // CRITICAL SAFETY CHECK: Verify winner does not have >50M tokens
         const winnerInList = holders.find(h => h.address === recipientWallet);
         if (!winnerInList) {
           throw new Error(`Selected winner ${recipientWallet} not found in holders list - SAFETY BLOCK`);
         }
-        console.log(`✅ Winner verified as holder with ${winnerInList.balance.toLocaleString()} tokens`);
+        if (winnerInList.balance > MAX_ELIGIBLE_BALANCE) {
+          throw new Error(`SAFETY BLOCK: Winner has ${winnerInList.balance.toLocaleString()} tokens (>50M limit)`);
+        }
+        console.log(`✅ Winner verified: ${winnerInList.balance.toLocaleString()} tokens (under 50M cap)`);
 
         // Send SOL to holder from flip wallet
         const sendResult = await sendSolFromFlipWallet(recipientWallet, amountToUse, flipWallet);
@@ -780,12 +790,22 @@ async function getTokenHolders(): Promise<TokenHolder[]> {
     const balance = parseFloat(account.uiAmountString || '0');
 
     // IMPORTANT: ignore excluded wallets and zero-balance accounts
-    if (!owner || EXCLUDED_WALLETS.includes(owner) || balance <= 0) continue;
+    if (!owner) continue;
+    
+    if (EXCLUDED_WALLETS.includes(owner)) {
+      console.log(`🚫 Excluding wallet (in exclusion list): ${owner}`);
+      continue;
+    }
+    
+    if (balance <= 0) {
+      console.log(`🚫 Excluding wallet (zero balance): ${owner}`);
+      continue;
+    }
 
     // IMPORTANT: Skip wallets with more than MAX_ELIGIBLE_BALANCE (50M tokens)
     // This filters out bonding curves and protocol wallets
     if (balance > MAX_ELIGIBLE_BALANCE) {
-      console.log(`⚠️ Skipping ${owner} - balance ${balance.toLocaleString()} exceeds 50M cap`);
+      console.log(`🚫 Excluding wallet (>50M tokens): ${owner} - ${balance.toLocaleString()} tokens`);
       continue;
     }
 
