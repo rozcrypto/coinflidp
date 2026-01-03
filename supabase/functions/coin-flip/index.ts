@@ -138,7 +138,8 @@ serve(async (req) => {
     const claimResult = await claimCreatorFees(config.tokenMint);
     if (claimResult.success) {
       console.log('✅ Claimed fees, tx:', claimResult.signature);
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log('⏳ Waiting 5 seconds for balance to update...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
     } else {
       console.log('⚠️ Claim failed or no fees available');
       return new Response(JSON.stringify({ 
@@ -149,19 +150,25 @@ serve(async (req) => {
       });
     }
 
+    console.log('📊 Checking balance after claim...');
     const devBalanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Dev wallet balance AFTER claim:', devBalanceAfter, 'SOL');
     
     const claimedFees = Math.max(0, devBalanceAfter - devBalanceBefore);
     console.log('💰 Newly claimed fees:', claimedFees, 'SOL');
 
-    const amountToUse = Math.floor((claimedFees - 0.002) * 1000) / 1000;
+    // Use the larger of: claimed fees OR existing balance (if we already have SOL from previous claims)
+    const availableBalance = devBalanceAfter - 0.005; // Keep 0.005 SOL reserve for tx fees
+    const amountToUse = Math.floor(Math.max(claimedFees - 0.002, availableBalance > 0 ? Math.min(availableBalance, 0.1) : 0) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse, 'SOL');
 
     if (amountToUse <= 0) {
+      console.log('❌ Amount too small. Claimed:', claimedFees, 'Available balance:', devBalanceAfter);
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Claimed amount too small after tx fee reserve' 
+        message: 'Claimed amount too small after tx fee reserve',
+        claimedFees,
+        devBalance: devBalanceAfter
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -291,12 +298,19 @@ serve(async (req) => {
         console.log('Hot Wallet 1:', hotWallet1.address);
         console.log('Hot Wallet 2:', hotWallet2.address);
 
-        const txFee = 0.000005;
+        // Account for tx fees AND rent-exempt minimum for new accounts
+        // Rent exempt minimum is ~0.00089 SOL, tx fee is ~0.000005 SOL
+        const txFee = 0.00001; // Slightly higher to be safe
+        const rentExempt = 0.001; // Rent exempt buffer
         const hop1Amount = amountToUse;
-        const hop2Amount = hop1Amount - txFee;
-        const finalAmount = hop2Amount - txFee;
+        const hop2Amount = hop1Amount - txFee - rentExempt; // Leave rent in hot wallet 1
+        const finalAmount = hop2Amount - txFee - rentExempt; // Leave rent in hot wallet 2
 
         console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
+        
+        if (finalAmount < 0.001) {
+          throw new Error(`Amount too small for multi-hop. Need at least 0.004 SOL, have ${amountToUse} SOL`);
+        }
 
         // HOP 1: Dev Wallet → Hot Wallet 1
         console.log('📤 HOP 1: Dev → Hot Wallet 1');
