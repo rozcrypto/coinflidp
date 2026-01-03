@@ -45,6 +45,28 @@ serve(async (req) => {
     console.log('Creator wallet:', SOLANA_PUBLIC_KEY);
 
     // ============================================================
+    // MUTEX LOCK: Prevent multiple simultaneous flip attempts
+    // Check if there's already a flip in progress (processing status)
+    // ============================================================
+    const { data: processingFlips } = await supabase
+      .from('flip_history')
+      .select('id, created_at')
+      .eq('status', 'processing')
+      .gte('created_at', new Date(Date.now() - 60000).toISOString()); // Within last 60 seconds
+
+    if (processingFlips && processingFlips.length > 0) {
+      console.log('🔒 MUTEX LOCK: Another flip is already in progress, skipping');
+      console.log('Active flip:', processingFlips[0].id);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Another flip is already in progress',
+        activeFlipId: processingFlips[0].id
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============================================================
     // CRITICAL: ONLY proceed if claimCreatorFees API call succeeds
     // We NEVER touch any existing balance - only newly claimed fees
     // ============================================================
