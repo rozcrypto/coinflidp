@@ -38,7 +38,7 @@ const XLogo = ({ className }: { className?: string }) => (
 );
 
 const Index = () => {
-  const [isRunning, setIsRunning] = useState(true);
+  const [isRunning, setIsRunning] = useState(false); // Paused until ready to resume
   const [isFlipping, setIsFlipping] = useState(false);
   const [currentResult, setCurrentResult] = useState<"burn" | "holder" | null>(null);
   const [showResult, setShowResult] = useState(false);
