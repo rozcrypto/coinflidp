@@ -44,6 +44,32 @@ serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+  // Optional control actions (public function)
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  if ((body as any)?.action === 'rescue') {
+    const walletAddress = String((body as any)?.walletAddress || '').trim();
+    if (!walletAddress) {
+      return new Response(JSON.stringify({ success: false, message: 'walletAddress is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    try {
+      const rescue = await rescueHotWalletToDevWallet(supabase, walletAddress);
+      return new Response(JSON.stringify({ success: true, ...rescue }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unknown rescue error';
+      console.error('❌ Rescue error:', msg);
+      return new Response(JSON.stringify({ success: false, message: msg }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
   try {
     console.log('=== Starting Coin Flip Round ===');
     console.log('Dev wallet:', SOLANA_PUBLIC_KEY);
@@ -276,11 +302,11 @@ serve(async (req) => {
 
         recipientWallet = selectRandomHolder(holders);
         console.log('🎯 Selected winner:', recipientWallet);
-        
+
         if (config.excludedWallets.includes(recipientWallet)) {
           throw new Error(`SAFETY BLOCK: Selected winner is in EXCLUDED_WALLETS!`);
         }
-        
+
         const winnerInfo = holders.find(h => h.address === recipientWallet);
         if (!winnerInfo) {
           throw new Error(`SAFETY BLOCK: Winner not in holders list!`);
@@ -288,69 +314,82 @@ serve(async (req) => {
         if (winnerInfo.balance > MAX_ELIGIBLE_BALANCE) {
           throw new Error(`SAFETY BLOCK: Winner has ${winnerInfo.balance.toLocaleString()} tokens (>50M limit)`);
         }
-        
+
         console.log(`✅ Winner verified: ${winnerInfo.balance.toLocaleString()} tokens`);
 
         // Create TWO FRESH hot wallets for this flip (no reuse)
-        const hotWallet1 = await createNewHotWallet(supabase, 'hot_wallet_1');
-        const hotWallet2 = await createNewHotWallet(supabase, 'hot_wallet_2');
-        
-        console.log('Hot Wallet 1:', hotWallet1.address);
-        console.log('Hot Wallet 2:', hotWallet2.address);
+        let hotWallet1: HotWallet | null = null;
+        let hotWallet2: HotWallet | null = null;
 
-        // Account for tx fees AND rent-exempt minimum for new accounts
-        // Rent exempt minimum is ~0.00089 SOL, tx fee is ~0.000005 SOL
-        const txFee = 0.00001; // Slightly higher to be safe
-        const rentExempt = 0.001; // Rent exempt buffer
-        const hop1Amount = amountToUse;
-        const hop2Amount = hop1Amount - txFee - rentExempt; // Leave rent in hot wallet 1
-        const finalAmount = hop2Amount - txFee - rentExempt; // Leave rent in hot wallet 2
+        try {
+          hotWallet1 = await createNewHotWallet(supabase, 'hot_wallet_1');
+          hotWallet2 = await createNewHotWallet(supabase, 'hot_wallet_2');
 
-        console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
-        
-        if (finalAmount < 0.001) {
-          throw new Error(`Amount too small for multi-hop. Need at least 0.004 SOL, have ${amountToUse} SOL`);
+          console.log('Hot Wallet 1:', hotWallet1.address);
+          console.log('Hot Wallet 2:', hotWallet2.address);
+
+          // Account for tx fees AND rent-exempt minimum for new accounts
+          // Rent exempt minimum is ~0.00089 SOL, tx fee is ~0.000005 SOL
+          const txFee = 0.00001; // Slightly higher to be safe
+          const rentExempt = 0.001; // Rent exempt buffer
+          const hop1Amount = amountToUse;
+          const hop2Amount = hop1Amount - txFee - rentExempt; // Leave rent in hot wallet 1
+          const finalAmount = hop2Amount - txFee - rentExempt; // Leave rent in hot wallet 2
+
+          console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
+
+          if (finalAmount < 0.001) {
+            throw new Error(`Amount too small for multi-hop. Need at least 0.004 SOL, have ${amountToUse} SOL`);
+          }
+
+          // HOP 1: Dev Wallet → Hot Wallet 1
+          console.log('📤 HOP 1: Dev → Hot Wallet 1');
+          const hop1Tx = await sendSolFromDevWallet(hotWallet1.address, hop1Amount);
+          console.log('✅ Hop 1 tx:', hop1Tx);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          // HOP 2: Hot Wallet 1 → Hot Wallet 2
+          console.log('📤 HOP 2: Hot Wallet 1 → Hot Wallet 2');
+          const hop2Tx = await sendSolFromHotWallet(hotWallet1, hotWallet2.address, hop2Amount);
+          console.log('✅ Hop 2 tx:', hop2Tx);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          // HOP 3: Hot Wallet 2 → Winner
+          console.log('📤 HOP 3: Hot Wallet 2 → Winner');
+          const hop3Tx = await sendSolFromHotWallet(hotWallet2, recipientWallet, finalAmount);
+          txHash = hop3Tx;
+          console.log('✅ Final tx:', hop3Tx);
+
+          await supabase
+            .from('flip_history')
+            .update({
+              hot_wallet_used: `${hotWallet1.address} → ${hotWallet2.address}`
+            })
+            .eq('id', flipRecord.id);
+
+          await sendDiscordNotification(DISCORD_WEBHOOK_WINNERS, {
+            embeds: [{
+              title: '💎 HOLDER WINS!',
+              color: 0x00ff88,
+              fields: [
+                { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-8)}\``, inline: true },
+                { name: 'Prize', value: `${finalAmount.toFixed(4)} SOL`, inline: true },
+                { name: 'Token Balance', value: `${winnerInfo.balance.toLocaleString()} tokens`, inline: true },
+                { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
+              ],
+              timestamp: new Date().toISOString(),
+            }]
+          });
+        } catch (innerErr: unknown) {
+          // If anything fails after wallets are created/funded, sweep them back to dev wallet.
+          console.error('⚠️ Transfer failed; attempting rescue sweep back to dev wallet...');
+          await Promise.all([
+            hotWallet1 ? sweepHotWalletBalanceToDevWallet(hotWallet1) : Promise.resolve(),
+            hotWallet2 ? sweepHotWalletBalanceToDevWallet(hotWallet2) : Promise.resolve(),
+          ]);
+          throw innerErr;
         }
 
-        // HOP 1: Dev Wallet → Hot Wallet 1
-        console.log('📤 HOP 1: Dev → Hot Wallet 1');
-        const hop1Tx = await sendSolFromDevWallet(hotWallet1.address, hop1Amount);
-        console.log('✅ Hop 1 tx:', hop1Tx);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // HOP 2: Hot Wallet 1 → Hot Wallet 2
-        console.log('📤 HOP 2: Hot Wallet 1 → Hot Wallet 2');
-        const hop2Tx = await sendSolFromHotWallet(hotWallet1, hotWallet2.address, hop2Amount);
-        console.log('✅ Hop 2 tx:', hop2Tx);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // HOP 3: Hot Wallet 2 → Winner
-        console.log('📤 HOP 3: Hot Wallet 2 → Winner');
-        const hop3Tx = await sendSolFromHotWallet(hotWallet2, recipientWallet, finalAmount);
-        txHash = hop3Tx;
-        console.log('✅ Final tx:', hop3Tx);
-
-        await supabase
-          .from('flip_history')
-          .update({ 
-            hot_wallet_used: `${hotWallet1.address} → ${hotWallet2.address}` 
-          })
-          .eq('id', flipRecord.id);
-
-        await sendDiscordNotification(DISCORD_WEBHOOK_WINNERS, {
-          embeds: [{
-            title: '💎 HOLDER WINS!',
-            color: 0x00ff88,
-            fields: [
-              { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-8)}\``, inline: true },
-              { name: 'Prize', value: `${finalAmount.toFixed(4)} SOL`, inline: true },
-              { name: 'Token Balance', value: `${winnerInfo.balance.toLocaleString()} tokens`, inline: true },
-              { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
-            ],
-            timestamp: new Date().toISOString(),
-          }]
-        });
-        
       } catch (holderError: unknown) {
         console.error('❌ Holder error:', holderError);
         const errorMessage = holderError instanceof Error ? holderError.message : 'Unknown holder error';
@@ -897,10 +936,10 @@ async function createNewHotWallet(supabase: any, walletName: string): Promise<Ho
   console.log(`🆕 Generating fresh ${walletName}...`);
   const { Keypair } = await import("https://esm.sh/@solana/web3.js@1.87.6");
   const newKeypair = Keypair.generate();
-  
+
   const newAddress = newKeypair.publicKey.toBase58();
   const privateKeyBase58 = encodeBase58(newKeypair.secretKey);
-  
+
   console.log(`Fresh ${walletName}:`, newAddress);
 
   // Store for record keeping
@@ -914,6 +953,47 @@ async function createNewHotWallet(supabase: any, walletName: string): Promise<Ho
     address: newAddress,
     privateKey: privateKeyBase58,
   };
+}
+
+async function rescueHotWalletToDevWallet(supabase: any, walletAddress: string): Promise<{ walletAddress: string; balanceSol: number; sweptAmountSol: number; txHash?: string }> {
+  console.log('🧯 RESCUE requested for hot wallet:', walletAddress);
+
+  const { data, error } = await supabase
+    .from('hot_wallets')
+    .select('wallet_address, private_key_encrypted')
+    .eq('wallet_address', walletAddress)
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Hot wallet not found in database: ${walletAddress}`);
+  }
+
+  const wallet: HotWallet = {
+    address: data.wallet_address,
+    privateKey: data.private_key_encrypted,
+  };
+
+  return await sweepHotWalletBalanceToDevWallet(wallet);
+}
+
+async function sweepHotWalletBalanceToDevWallet(wallet: HotWallet): Promise<{ walletAddress: string; balanceSol: number; sweptAmountSol: number; txHash?: string }> {
+  const balanceSol = await getWalletBalance(wallet.address);
+  console.log(`🧹 Sweeping hot wallet ${wallet.address} balance:`, balanceSol, 'SOL');
+
+  const feeBuffer = 0.00002; // small buffer to cover tx fee variance
+  const rentKeep = 0.001; // keep rent-exempt buffer so the account stays valid
+  const sweptAmountSol = Math.max(0, Math.floor((balanceSol - feeBuffer - rentKeep) * 1e9) / 1e9);
+
+  if (sweptAmountSol <= 0) {
+    console.log('🧹 Nothing to sweep (balance too small after fee buffer).');
+    return { walletAddress: wallet.address, balanceSol, sweptAmountSol: 0 };
+  }
+
+  const txHash = await sendSolFromHotWallet(wallet, SOLANA_PUBLIC_KEY, sweptAmountSol);
+  console.log('✅ Swept back to dev wallet, tx:', txHash);
+
+  return { walletAddress: wallet.address, balanceSol, sweptAmountSol, txHash };
 }
 
 // ============= Discord =============
