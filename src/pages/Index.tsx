@@ -534,7 +534,7 @@ const Index = () => {
               <span className="text-sm text-muted-foreground font-medium">Built on Solana</span>
             </div>
             <p className="text-[11px] text-muted-foreground/40 max-w-md mx-auto">
-              2% dev fee • All transactions verifiable on Solscan • Smart contract audited
+              2% dev fee • All transactions verifiable on Solscan • Smart contract audited • PW
             </p>
           </footer>
         </main>
