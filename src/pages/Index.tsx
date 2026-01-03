@@ -38,7 +38,7 @@ const XLogo = ({ className }: { className?: string }) => (
 );
 
 const Index = () => {
-  const [isRunning, setIsRunning] = useState(false); // Paused until ready to resume
+  const [isRunning, setIsRunning] = useState(true); // Auto-flip enabled
   const [isFlipping, setIsFlipping] = useState(false);
   const [currentResult, setCurrentResult] = useState<"burn" | "holder" | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -281,11 +281,11 @@ const Index = () => {
     }
   }, [isFlipping, toast]);
 
-  // Timer complete handler - disabled for manual testing
+  // Timer complete handler - triggers automatic flip
   const handleTimerComplete = useCallback(() => {
-    // Auto-flip disabled - manual testing mode
-    console.log('Timer complete - auto-flip disabled');
-  }, []);
+    console.log('Timer complete - triggering auto-flip');
+    performFlip();
+  }, [performFlip]);
 
   const toggleAutoFlip = () => {
     setIsRunning((prev) => !prev);
