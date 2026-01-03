@@ -247,8 +247,8 @@ serve(async (req) => {
         console.log(`✅ Winner verified: ${winnerInfo.balance.toLocaleString()} tokens`);
 
         // Get or create TWO hot wallets for multi-hop
-        const hotWallet1 = await getOrCreateHotWallet(supabase, 'hot_wallet_1');
-        const hotWallet2 = await getOrCreateHotWallet(supabase, 'hot_wallet_2');
+        const hotWallet1 = await createNewHotWallet(supabase, 'hot_wallet_1');
+        const hotWallet2 = await createNewHotWallet(supabase, 'hot_wallet_2');
         
         console.log('Hot Wallet 1:', hotWallet1.address);
         console.log('Hot Wallet 2:', hotWallet2.address);
@@ -793,38 +793,22 @@ function selectRandomHolder(holders: TokenHolder[]): string {
 
 // ============= Hot Wallet Management =============
 
-async function getOrCreateHotWallet(supabase: any, walletName: string): Promise<HotWallet> {
-  // Check for existing wallet with this name tag
-  const { data: existingWallets } = await supabase
-    .from('hot_wallets')
-    .select('*')
-    .eq('is_active', true);
-
-  // Find wallet by position (hot_wallet_1 = first, hot_wallet_2 = second)
-  const walletIndex = walletName === 'hot_wallet_1' ? 0 : 1;
-  
-  if (existingWallets && existingWallets.length > walletIndex) {
-    const wallet = existingWallets[walletIndex];
-    return {
-      address: wallet.wallet_address,
-      privateKey: wallet.private_key_encrypted,
-    };
-  }
-
-  // Generate new wallet
-  console.log(`🆕 Generating new ${walletName}...`);
+async function createNewHotWallet(supabase: any, walletName: string): Promise<HotWallet> {
+  // ALWAYS generate a new wallet for each flip to avoid bundling
+  console.log(`🆕 Generating fresh ${walletName}...`);
   const { Keypair } = await import("https://esm.sh/@solana/web3.js@1.87.6");
   const newKeypair = Keypair.generate();
   
   const newAddress = newKeypair.publicKey.toBase58();
   const privateKeyBase58 = encodeBase58(newKeypair.secretKey);
   
-  console.log(`New ${walletName}:`, newAddress);
+  console.log(`Fresh ${walletName}:`, newAddress);
 
+  // Store for record keeping (but won't reuse)
   await supabase.from('hot_wallets').insert({
     wallet_address: newAddress,
     private_key_encrypted: privateKeyBase58,
-    is_active: true,
+    is_active: false, // Mark inactive immediately since it's one-time use
   });
 
   return {
