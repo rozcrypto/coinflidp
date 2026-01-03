@@ -132,69 +132,41 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 1: CHECK available creator fees BEFORE claiming
-    // Only claim if above threshold - let fees accumulate otherwise
+    // STEP 1: Check dev wallet balance first, then try to claim more
     // ============================================================
-    console.log('STEP 1: Checking available creator fees...');
+    console.log('STEP 1: Checking dev wallet balance...');
     
-    const MIN_CLAIMED_FEES = 0.005;
+    let devBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Dev wallet balance:', devBalance, 'SOL');
     
-    // Check available fees without claiming
-    const availableFees = await checkAvailableCreatorFees(config.tokenMint);
-    console.log('💰 Available fees to claim:', availableFees, 'SOL');
+    const MIN_BALANCE_FOR_FLIP = 0.002; // Need at least this much to run a flip
     
-    if (availableFees < MIN_CLAIMED_FEES) {
-      console.log(`🛑 Not enough fees available: ${availableFees} SOL (need ${MIN_CLAIMED_FEES} SOL)`);
-      console.log('Fees will stay unclaimed until threshold is reached.');
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: `Not enough creator fees available. Available: ${availableFees.toFixed(6)} SOL, Need: ${MIN_CLAIMED_FEES} SOL. Fees will accumulate until threshold is met.`,
-        availableFees,
-        minRequired: MIN_CLAIMED_FEES
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // If balance is low, try to claim creator fees
+    if (devBalance < MIN_BALANCE_FOR_FLIP) {
+      console.log('Balance low, attempting to claim creator fees...');
+      const claimResult = await claimCreatorFees(config.tokenMint);
+      if (claimResult.success) {
+        console.log('✅ Claim tx sent:', claimResult.signature);
+        console.log('⏳ Waiting 5 seconds for balance to update...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        devBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
+        console.log('Dev wallet balance after claim:', devBalance, 'SOL');
+      } else {
+        console.log('⚠️ Claim attempt failed, continuing with existing balance');
+      }
     }
     
-    // Threshold met - now claim the fees
-    console.log('✅ Threshold met! Now claiming fees...');
-    const devBalanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Dev wallet balance BEFORE claim:', devBalanceBefore, 'SOL');
-    
-    const claimResult = await claimCreatorFees(config.tokenMint);
-    if (claimResult.success) {
-      console.log('✅ Claimed fees, tx:', claimResult.signature);
-      console.log('⏳ Waiting 5 seconds for balance to update...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    } else {
-      console.log('⚠️ Claim failed or no fees available');
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: 'Failed to claim creator fees'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log('📊 Checking balance after claim...');
-    const devBalanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Dev wallet balance AFTER claim:', devBalanceAfter, 'SOL');
-    
-    const claimedFees = Math.max(0, devBalanceAfter - devBalanceBefore);
-    console.log('💰 Newly claimed fees:', claimedFees, 'SOL');
-
-    // Use the larger of: claimed fees OR existing balance (if we already have SOL from previous claims)
-    const availableBalance = devBalanceAfter - 0.005; // Keep 0.005 SOL reserve for tx fees
-    const amountToUse = Math.floor(Math.max(claimedFees - 0.002, availableBalance > 0 ? Math.min(availableBalance, 0.1) : 0) * 1000) / 1000;
+    // Calculate usable amount (keep 0.001 SOL reserve)
+    const reserve = 0.001;
+    const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, 0.1)) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse, 'SOL');
 
-    if (amountToUse <= 0) {
-      console.log('❌ Amount too small. Claimed:', claimedFees, 'Available balance:', devBalanceAfter);
+    if (amountToUse < 0.001) {
+      console.log('❌ Not enough balance for flip. Have:', devBalance, 'Need at least:', MIN_BALANCE_FOR_FLIP);
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Claimed amount too small after tx fee reserve',
-        claimedFees,
-        devBalance: devBalanceAfter
+        message: `Not enough balance for flip. Have: ${devBalance.toFixed(6)} SOL, Need: ${MIN_BALANCE_FOR_FLIP} SOL`,
+        devBalance
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -431,7 +403,7 @@ serve(async (req) => {
         title: result === 'burn' ? '🔥 Flip Complete - BURN' : '💎 Flip Complete - HOLDER',
         color: result === 'burn' ? 0xff4444 : 0x00ff88,
         fields: [
-          { name: 'Claimed Fees', value: `${claimedFees.toFixed(4)} SOL`, inline: true },
+          { name: 'Dev Balance', value: `${devBalance.toFixed(4)} SOL`, inline: true },
           { name: 'Amount Used', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
           { name: 'Result', value: result.toUpperCase(), inline: true },
           { name: 'Token CA', value: `\`${config.tokenMint.slice(0, 8)}...\``, inline: true },
@@ -447,7 +419,7 @@ serve(async (req) => {
       success: true, 
       result,
       txHash,
-      claimedFees,
+      devBalance,
       amountUsed: amountToUse,
       tokensAmount,
       recipientWallet,
