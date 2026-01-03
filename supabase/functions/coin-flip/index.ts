@@ -162,8 +162,8 @@ serve(async (req) => {
     let devBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Dev wallet balance:', devBalance, 'SOL');
     
-    const MIN_BALANCE_FOR_FLIP = 0.0005; // Need at least this much to run a flip
-    
+    const MIN_BALANCE_FOR_FLIP = 0.0005; // Need at least this much to run a flip (wallet balance)
+
     // If balance is low, try to claim creator fees
     if (devBalance < MIN_BALANCE_FOR_FLIP) {
       console.log('Balance low, attempting to claim creator fees...');
@@ -178,20 +178,26 @@ serve(async (req) => {
         console.log('⚠️ Claim attempt failed, continuing with existing balance');
       }
     }
-    
-    // Calculate usable amount (keep enough for rent-exempt + tx fees)
-    // Dev wallet must keep at least 0.002 SOL to remain rent-exempt + cover fees
-    const reserve = 0.002;
-    // Use available balance up to 0.1 SOL max per flip
-    const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, 0.1)) * 1000000) / 1000000;
+
+    // Calculate usable amount
+    // NOTE: System accounts don't need a large "rent reserve". We only keep a small
+    // buffer for transaction fees so flips can run even at low balances.
+    const FEE_BUFFER = 0.00005;
+    const MAX_PER_FLIP = 0.1;
+
+    const rawUsable = Math.max(0, devBalance - FEE_BUFFER);
+    const amountToUse = Math.floor(Math.min(rawUsable, MAX_PER_FLIP) * 1_000_000) / 1_000_000;
+
     console.log('Amount to use for flip:', amountToUse, 'SOL');
 
-    if (amountToUse < 0.0003) {
-      console.log('❌ Not enough balance for flip. Have:', devBalance, 'Need at least:', MIN_BALANCE_FOR_FLIP);
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: `Not enough balance for flip. Have: ${devBalance.toFixed(6)} SOL, Need: ${MIN_BALANCE_FOR_FLIP} SOL`,
-        devBalance
+    const MIN_AMOUNT_TO_USE = 0.0003;
+    if (amountToUse < MIN_AMOUNT_TO_USE) {
+      console.log('❌ Not enough usable balance for flip. Have:', devBalance, 'Usable:', amountToUse);
+      return new Response(JSON.stringify({
+        success: false,
+        message: `Not enough usable balance for flip. Have: ${devBalance.toFixed(6)} SOL, Usable: ${amountToUse.toFixed(6)} SOL, Need usable: ${MIN_AMOUNT_TO_USE} SOL`,
+        devBalance,
+        amountToUse,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
