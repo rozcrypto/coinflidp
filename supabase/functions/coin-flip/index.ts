@@ -406,27 +406,52 @@ serve(async (req) => {
 // Check available creator fees WITHOUT claiming them
 async function checkAvailableCreatorFees(tokenMint: string): Promise<number> {
   try {
-    // Use PumpFun API to check available fees
-    const response = await fetch(`https://frontend-api.pump.fun/coins/${tokenMint}`, {
+    // Try PumpPortal API first
+    const response = await fetch(`https://pumpportal.fun/api/data/token/${tokenMint}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
 
-    if (!response.ok) {
-      console.log('Could not fetch token info from PumpFun API');
-      return 0;
+    if (response.ok) {
+      const tokenData = await response.json();
+      console.log('PumpPortal token data:', JSON.stringify(tokenData).slice(0, 500));
+      
+      // Check various possible field names for creator fees
+      const feeBalance = tokenData.creatorFeeBalance || 
+                        tokenData.creator_fee_balance || 
+                        tokenData.pendingCreatorFees ||
+                        tokenData.pending_creator_fees || 0;
+      
+      // Could be in lamports or SOL depending on API
+      const feeBalanceSol = feeBalance > 1000 ? feeBalance / 1_000_000_000 : feeBalance;
+      console.log('PumpPortal API - Creator fee balance:', feeBalanceSol, 'SOL');
+      return feeBalanceSol;
+    }
+    
+    // Fallback: Try pump.fun public API
+    const pumpResponse = await fetch(`https://client-api-2-74b1891ee9f9.herokuapp.com/coins/${tokenMint}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (pumpResponse.ok) {
+      const pumpData = await pumpResponse.json();
+      console.log('PumpFun API data:', JSON.stringify(pumpData).slice(0, 500));
+      
+      const feeBalance = pumpData.creatorFeeBalance || 
+                        pumpData.creator_fee_balance || 0;
+      const feeBalanceSol = feeBalance > 1000 ? feeBalance / 1_000_000_000 : feeBalance;
+      console.log('PumpFun API - Creator fee balance:', feeBalanceSol, 'SOL');
+      return feeBalanceSol;
     }
 
-    const tokenData = await response.json();
-    // creator_fee_balance is in lamports
-    const feeBalanceLamports = tokenData.creator_fee_balance || 0;
-    const feeBalanceSol = feeBalanceLamports / 1_000_000_000;
-    
-    console.log('PumpFun API - Creator fee balance:', feeBalanceSol, 'SOL');
-    return feeBalanceSol;
+    console.log('Could not fetch token info from any API, will try to claim and check');
+    // Return a high number to trigger the claim attempt, then check balance diff
+    return 999;
   } catch (error) {
     console.error('Error checking available fees:', error);
-    return 0;
+    // Return high to attempt claim
+    return 999;
   }
 }
 
