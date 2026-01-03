@@ -85,6 +85,7 @@ serve(async (req) => {
     // ============================================================
     // STEP 0: Load token config from database (CA, burn address)
     // This makes the system flexible - you can change CA anytime!
+    // SAFETY: Won't run if is_active=false or CA is placeholder
     // ============================================================
     const { data: tokenConfigData, error: configError } = await supabase
       .from('token_config')
@@ -94,12 +95,26 @@ serve(async (req) => {
       .single();
 
     if (configError || !tokenConfigData) {
-      console.error('Failed to load token config:', configError);
+      console.log('⏸️ PAUSED: No active token configuration found. Set is_active=true when ready to launch.');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'No active token configuration found. Please set up token_config first.'
+        message: 'System paused. No active token configuration. Update token_config and set is_active=true to launch.'
       }), {
-        status: 400,
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Safety check: Don't run if CA looks like a placeholder
+    const PLACEHOLDER_PATTERNS = ['PLACEHOLDER', 'YOUR_', 'CHANGE_ME', '0000000'];
+    const isPlaceholder = PLACEHOLDER_PATTERNS.some(p => tokenConfigData.mint_address.includes(p));
+    if (isPlaceholder || tokenConfigData.mint_address.length < 32) {
+      console.log('⏸️ PAUSED: Token CA appears to be a placeholder. Update to real CA before launch.');
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'System paused. Token CA is a placeholder. Update token_config with real CA.'
+      }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
