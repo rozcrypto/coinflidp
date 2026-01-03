@@ -157,10 +157,13 @@ serve(async (req) => {
     }
     
     // Calculate usable amount (keep enough for rent-exempt + tx fees)
-    // Dev wallet must keep at least 0.001 SOL to remain rent-exempt
-    const reserve = 0.001;
-    const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, 0.1)) * 1000000) / 1000000;
-    console.log('Amount to use for flip:', amountToUse, 'SOL');
+    // Dev wallet must keep at least 0.002 SOL to remain rent-exempt + cover fees
+    const reserve = 0.002;
+    // For BURN: use minimum 0.005 SOL to save money during testing
+    // For HOLDER: use available balance up to 0.1 SOL
+    const maxAmountForBurn = 0.005; // Minimum buy amount for pump.fun
+    const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, maxAmountForBurn)) * 1000000) / 1000000;
+    console.log('Amount to use for flip:', amountToUse, 'SOL (testing with minimal amount)');
 
     if (amountToUse < 0.0003) {
       console.log('❌ Not enough balance for flip. Have:', devBalance, 'Need at least:', MIN_BALANCE_FOR_FLIP);
