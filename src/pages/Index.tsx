@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -13,6 +13,7 @@ import Leaderboard, { LeaderboardEntry } from "@/components/Leaderboard";
 import { cn } from "@/lib/utils";
 import coinLogo from "@/assets/coin-logo.png";
 import pumpfunLogo from "@/assets/pumpfun-logo.png";
+import { supabase } from "@/integrations/supabase/client";
 
 const FLIP_INTERVAL = 120;
 
@@ -36,20 +37,6 @@ const XLogo = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const MOCK_WALLETS = [
-  "7xKXp3mN9vWq", "BvR2pQ8kLmNx", "9aZxW4yLmPqR", "mN3pK7vRsTuW",
-  "Qw8mXt2PnYzA", "Lp5zHj9NcBvD", "Yk4rBs6MqFgH", "Df2wNg8XvJkL"
-];
-
-const generateMockTxHash = () => {
-  const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  let hash = "";
-  for (let i = 0; i < 64; i++) {
-    hash += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return hash;
-};
-
 const Index = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [isFlipping, setIsFlipping] = useState(false);
@@ -63,7 +50,175 @@ const Index = () => {
   const [totalBurnedSol, setTotalBurnedSol] = useState(0);
   const [totalToHoldersSol, setTotalToHoldersSol] = useState(0);
   const [devRewardsSol, setDevRewardsSol] = useState(0);
+  const [lastFlipTime, setLastFlipTime] = useState<Date | null>(null);
   const { toast } = useToast();
+
+  // Load initial data from database
+  useEffect(() => {
+    const loadFlipHistory = async () => {
+      const { data, error } = await supabase
+        .from('flip_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Error loading flip history:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Convert to FlipRecord format
+        const flipRecords: FlipRecord[] = data.map(flip => ({
+          id: flip.id,
+          result: flip.result as "burn" | "holder",
+          timestamp: new Date(flip.created_at),
+        }));
+        setHistory(flipRecords.reverse());
+
+        // Convert to WinnerRecord format
+        const winnerRecords: WinnerRecord[] = data
+          .filter(flip => flip.status === 'completed')
+          .map(flip => ({
+            id: flip.id,
+            type: flip.result as "burn" | "holder",
+            wallet: flip.recipient_wallet || undefined,
+            amount: Number(flip.creator_fees_sol) || 0,
+            txHash: flip.tx_hash || undefined,
+            timestamp: new Date(flip.created_at),
+          }));
+        setWinners(winnerRecords.reverse());
+
+        // Calculate totals
+        let burned = 0;
+        let toHolders = 0;
+        data.forEach(flip => {
+          if (flip.status === 'completed') {
+            const amount = Number(flip.creator_fees_sol) || 0;
+            if (flip.result === 'burn') {
+              burned += amount;
+            } else {
+              toHolders += amount;
+            }
+          }
+        });
+        setTotalBurnedSol(burned);
+        setTotalToHoldersSol(toHolders);
+        setDevRewardsSol((burned + toHolders) * 0.02);
+
+        // Set last flip time
+        if (data[0]) {
+          setLastFlipTime(new Date(data[0].created_at));
+        }
+      }
+    };
+
+    loadFlipHistory();
+  }, []);
+
+  // Subscribe to realtime updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('flip-history-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'flip_history'
+        },
+        (payload) => {
+          console.log('New flip received:', payload);
+          const flip = payload.new as {
+            id: string;
+            result: string;
+            created_at: string;
+            creator_fees_sol: number;
+            recipient_wallet: string | null;
+            tx_hash: string | null;
+            status: string;
+          };
+
+          // Add to history
+          const newRecord: FlipRecord = {
+            id: flip.id,
+            result: flip.result as "burn" | "holder",
+            timestamp: new Date(flip.created_at),
+          };
+          setHistory(prev => [...prev, newRecord]);
+
+          // Show animation
+          setIsFlipping(true);
+          setCurrentResult(null);
+
+          setTimeout(() => {
+            setCurrentResult(flip.result as "burn" | "holder");
+            setCurrentTxHash(flip.tx_hash || undefined);
+            setCurrentWallet(flip.recipient_wallet || undefined);
+            setCurrentAmount(Number(flip.creator_fees_sol) || 0);
+            setIsFlipping(false);
+            setShowResult(true);
+            setLastFlipTime(new Date(flip.created_at));
+
+            // Update totals
+            const amount = Number(flip.creator_fees_sol) || 0;
+            if (flip.result === 'burn') {
+              setTotalBurnedSol(prev => prev + amount);
+            } else {
+              setTotalToHoldersSol(prev => prev + amount);
+            }
+            setDevRewardsSol(prev => prev + amount * 0.02);
+
+            // Add to winners
+            const newWinner: WinnerRecord = {
+              id: flip.id,
+              type: flip.result as "burn" | "holder",
+              wallet: flip.recipient_wallet || undefined,
+              amount: amount,
+              txHash: flip.tx_hash || undefined,
+              timestamp: new Date(flip.created_at),
+            };
+            setWinners(prev => [...prev, newWinner]);
+
+            toast({
+              title: flip.result === "burn" ? "🔥 Buyback & Burn!" : "🎁 Holder Wins!",
+              description: `${amount.toFixed(4)} SOL ${flip.result === "burn" ? "burned" : "sent to holder"}`,
+            });
+
+            setTimeout(() => {
+              setShowResult(false);
+            }, 3500);
+          }, 2500);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'flip_history'
+        },
+        (payload) => {
+          console.log('Flip updated:', payload);
+          // Update winner record with tx hash if completed
+          const flip = payload.new as {
+            id: string;
+            tx_hash: string | null;
+            status: string;
+          };
+          if (flip.status === 'completed' && flip.tx_hash) {
+            setWinners(prev => prev.map(w => 
+              w.id === flip.id ? { ...w, txHash: flip.tx_hash || undefined } : w
+            ));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [toast]);
 
   // Calculate leaderboard entries from winners
   const leaderboardEntries = useMemo((): LeaderboardEntry[] => {
@@ -91,61 +246,47 @@ const Index = () => {
       .sort((a, b) => b.totalAmount - a.totalAmount);
   }, [winners]);
 
-  const performFlip = useCallback(() => {
+  // Manual flip trigger (calls the edge function)
+  const performFlip = useCallback(async () => {
     if (isFlipping) return;
 
     setIsFlipping(true);
     setShowResult(false);
     setCurrentResult(null);
 
-    setTimeout(() => {
-      const result = Math.random() > 0.5 ? "burn" : "holder";
-      const solValue = parseFloat((Math.random() * 0.5 + 0.1).toFixed(4));
-      const devCutSol = solValue * 0.02;
-      const txHash = generateMockTxHash();
-      const wallet = result === "holder" ? MOCK_WALLETS[Math.floor(Math.random() * MOCK_WALLETS.length)] : undefined;
+    try {
+      const { data, error } = await supabase.functions.invoke('coin-flip');
       
-      setCurrentResult(result);
-      setCurrentTxHash(txHash);
-      setCurrentWallet(wallet);
-      setCurrentAmount(solValue);
-      setIsFlipping(false);
-      setShowResult(true);
-
-      const newRecord: FlipRecord = {
-        id: Date.now(),
-        result,
-        timestamp: new Date(),
-      };
-      setHistory((prev) => [...prev, newRecord]);
-
-      const newWinner: WinnerRecord = {
-        id: Date.now(),
-        type: result,
-        wallet,
-        amount: solValue,
-        txHash,
-        timestamp: new Date(),
-      };
-      setWinners((prev) => [...prev, newWinner]);
-
-      if (result === "burn") {
-        setTotalBurnedSol((prev) => prev + solValue);
-      } else {
-        setTotalToHoldersSol((prev) => prev + solValue);
+      if (error) {
+        console.error('Flip error:', error);
+        toast({
+          title: "Flip failed",
+          description: error.message || "Could not execute flip",
+          variant: "destructive",
+        });
+        setIsFlipping(false);
+        return;
       }
-      setDevRewardsSol((prev) => prev + devCutSol);
 
+      console.log('Flip result:', data);
+      // The realtime subscription will handle the UI update
+    } catch (err) {
+      console.error('Flip error:', err);
       toast({
-        title: result === "burn" ? "🔥 Buyback & Burn!" : "🎁 Holder Wins!",
-        description: `${solValue.toFixed(4)} SOL ${result === "burn" ? "burned" : "sent to holder"}`,
+        title: "Flip failed",
+        description: "Could not connect to server",
+        variant: "destructive",
       });
-
-      setTimeout(() => {
-        setShowResult(false);
-      }, 3500);
-    }, 2500);
+      setIsFlipping(false);
+    }
   }, [isFlipping, toast]);
+
+  // Timer complete handler - triggers auto flip
+  const handleTimerComplete = useCallback(() => {
+    if (!isFlipping) {
+      performFlip();
+    }
+  }, [isFlipping, performFlip]);
 
   const toggleAutoFlip = () => {
     setIsRunning((prev) => !prev);
@@ -156,12 +297,13 @@ const Index = () => {
   };
 
   const resetHistory = () => {
+    // Note: This only resets the local view, not the database
     setHistory([]);
     setWinners([]);
     setTotalBurnedSol(0);
     setTotalToHoldersSol(0);
     setDevRewardsSol(0);
-    toast({ title: "Reset complete" });
+    toast({ title: "Local view reset", description: "Refresh to see all history" });
   };
 
   return (
@@ -258,7 +400,7 @@ const Index = () => {
               <div className="w-full max-w-[280px]">
                 <CasinoTimer
                   seconds={FLIP_INTERVAL}
-                  onComplete={performFlip}
+                  onComplete={handleTimerComplete}
                   isRunning={isRunning && !isFlipping}
                 />
               </div>
