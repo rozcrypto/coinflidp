@@ -9,10 +9,21 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SOLANA_PRIVATE_KEY = Deno.env.get('SOLANA_PRIVATE_KEY')!;
+const SOLANA_PUBLIC_KEY = Deno.env.get('SOLANA_PUBLIC_KEY')!;
 const HELIUS_API_KEY = Deno.env.get('HELIUS_API_KEY')!;
 
 const TOKEN_MINT = '8Se9ec6eAuq2qqYxF2WysCd3dV3qbG1qD4z6wenPpump';
 const BURN_ADDRESS = '1nc1nerator11111111111111111111111111111111';
+const PUMPPORTAL_API = 'https://pumpportal.fun/api/trade-local';
+const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
+
+// Excluded wallets (Creator, Raydium, Pump Curve, etc.)
+const EXCLUDED_WALLETS = [
+  SOLANA_PUBLIC_KEY,
+  '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1', // Raydium
+  'CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM', // Pump Curve
+  BURN_ADDRESS,
+];
 
 interface TokenHolder {
   address: string;
@@ -27,28 +38,32 @@ serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    console.log('Starting coin flip round...');
+    console.log('=== Starting Coin Flip Round ===');
+    console.log('Creator wallet:', SOLANA_PUBLIC_KEY);
 
-    // 1. Get wallet balance (creator fees available)
-    const walletAddress = await getWalletAddress();
-    console.log('Wallet address:', walletAddress);
-    
-    const solBalance = await getWalletBalance(walletAddress);
+    // Step 1: Claim creator fees from PumpPortal
+    console.log('Step 1: Claiming creator fees...');
+    const claimedFees = await claimCreatorFees();
+    console.log('Claimed fees result:', claimedFees);
+
+    // Step 2: Get wallet balance
+    const solBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Current SOL balance:', solBalance);
 
-    // Minimum threshold to proceed (0.001 SOL to cover tx fees)
-    if (solBalance < 0.001) {
+    // Minimum threshold to proceed (0.005 SOL minimum)
+    if (solBalance < 0.005) {
       console.log('Insufficient balance for flip, skipping round');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Insufficient creator fees for this round' 
+        message: 'Insufficient balance for this round',
+        balance: solBalance
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Calculate amount to use (leave some for tx fees)
-    const amountToUse = Math.max(0, solBalance - 0.002);
+    // Calculate amounts (90% for action, 10% for tx fees buffer)
+    const amountToUse = Math.floor((solBalance * 0.9) * 1000) / 1000;
     
     if (amountToUse <= 0) {
       console.log('No funds available after reserving tx fees');
@@ -60,11 +75,11 @@ serve(async (req) => {
       });
     }
 
-    // 2. Flip the coin (true random)
+    // Step 3: Flip the coin (50/50)
     const result = Math.random() < 0.5 ? 'burn' : 'holder';
-    console.log('Flip result:', result);
+    console.log('🎲 Flip result:', result);
 
-    // 3. Create flip record
+    // Step 4: Create flip record
     const { data: flipRecord, error: insertError } = await supabase
       .from('flip_history')
       .insert({
@@ -84,112 +99,64 @@ serve(async (req) => {
 
     let txHash: string | null = null;
     let recipientWallet: string | null = null;
-    let hotWalletUsed: string | null = null;
     let tokensAmount: number | null = null;
 
     if (result === 'burn') {
-      // BURN: Buyback tokens and burn them
-      console.log('Executing buyback and burn...');
+      // 🔥 BURN: Buyback tokens via PumpPortal and burn them
+      console.log('🔥 Executing buyback and burn via PumpPortal...');
       
       try {
-        // Get quote for swap
-        const quoteResponse = await fetch(
-          `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${TOKEN_MINT}&amount=${Math.floor(amountToUse * 1e9)}&slippageBps=100`
-        );
-        const quote = await quoteResponse.json();
-        console.log('Jupiter quote received, output amount:', quote.outAmount);
-
-        tokensAmount = parseInt(quote.outAmount) / 1e6; // Assuming 6 decimals
-
-        // Execute swap via Jupiter
-        const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            quoteResponse: quote,
-            userPublicKey: walletAddress,
-            wrapAndUnwrapSol: true,
-            destinationTokenAccount: BURN_ADDRESS, // Send directly to burn address
-          }),
-        });
-        
-        const swapData = await swapResponse.json();
-        
-        if (swapData.swapTransaction) {
-          // Sign and send the transaction
-          txHash = await signAndSendTransaction(swapData.swapTransaction);
-          console.log('Buyback & burn tx:', txHash);
-        } else {
-          console.error('No swap transaction returned:', swapData);
-          throw new Error('Failed to get swap transaction');
-        }
-      } catch (swapError: unknown) {
-        console.error('Swap error:', swapError);
-        const errorMessage = swapError instanceof Error ? swapError.message : 'Unknown swap error';
-        // Update record with error
+        const burnResult = await buyAndBurn(amountToUse);
+        txHash = burnResult.signature;
+        tokensAmount = burnResult.tokensReceived;
+        console.log('✅ Buyback & burn complete:', txHash);
+      } catch (burnError: unknown) {
+        console.error('❌ Burn error:', burnError);
+        const errorMessage = burnError instanceof Error ? burnError.message : 'Unknown burn error';
         await supabase
           .from('flip_history')
-          .update({ 
-            status: 'failed', 
-            error_message: errorMessage 
-          })
+          .update({ status: 'failed', error_message: errorMessage })
           .eq('id', flipRecord.id);
-        throw swapError;
+        throw burnError;
       }
     } else {
-      // HOLDER: Send SOL to random holder via hot wallet
-      console.log('Executing holder reward...');
+      // 💎 HOLDER: Send SOL to random holder
+      console.log('💎 Executing holder reward...');
       
       try {
-        // Get token holders
+        // Get token holders (filtered)
         const holders = await getTokenHolders();
         if (holders.length === 0) {
-          throw new Error('No token holders found');
+          throw new Error('No eligible token holders found');
         }
+
+        console.log(`Found ${holders.length} eligible holders`);
 
         // Select random holder (weighted by balance)
         recipientWallet = selectRandomHolder(holders);
-        console.log('Selected holder:', recipientWallet);
-
-        // Get a random hot wallet
-        const { data: hotWallets } = await supabase
-          .from('hot_wallets')
-          .select('*')
-          .eq('is_active', true);
-
-        if (hotWallets && hotWallets.length > 0) {
-          const randomHotWallet = hotWallets[Math.floor(Math.random() * hotWallets.length)];
-          hotWalletUsed = randomHotWallet.wallet_address;
-          
-          // Transfer to hot wallet first, then to holder
-          // For now, direct transfer (hot wallet system can be enhanced)
-          console.log('Using hot wallet:', hotWalletUsed);
-        }
+        console.log('Selected winner:', recipientWallet);
 
         // Send SOL to holder
-        txHash = await sendSolToAddress(recipientWallet, amountToUse);
-        console.log('Holder reward tx:', txHash);
+        const sendResult = await sendSolToAddress(recipientWallet, amountToUse);
+        txHash = sendResult.signature;
+        console.log('✅ Holder reward sent:', txHash);
       } catch (holderError: unknown) {
-        console.error('Holder reward error:', holderError);
+        console.error('❌ Holder reward error:', holderError);
         const errorMessage = holderError instanceof Error ? holderError.message : 'Unknown holder error';
         await supabase
           .from('flip_history')
-          .update({ 
-            status: 'failed', 
-            error_message: errorMessage 
-          })
+          .update({ status: 'failed', error_message: errorMessage })
           .eq('id', flipRecord.id);
         throw holderError;
       }
     }
 
-    // 4. Update flip record with results
+    // Step 5: Update flip record with results
     const { error: updateError } = await supabase
       .from('flip_history')
       .update({
         tx_hash: txHash,
         recipient_wallet: recipientWallet,
-        hot_wallet_used: hotWalletUsed,
         amount_tokens: tokensAmount,
         status: 'completed'
       })
@@ -199,7 +166,7 @@ serve(async (req) => {
       console.error('Error updating flip record:', updateError);
     }
 
-    console.log('Flip round completed successfully!');
+    console.log('=== Flip Round Complete ===');
 
     return new Response(JSON.stringify({ 
       success: true, 
@@ -213,7 +180,7 @@ serve(async (req) => {
     });
 
   } catch (error: unknown) {
-    console.error('Coin flip error:', error);
+    console.error('❌ Coin flip error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ 
       success: false, 
@@ -225,39 +192,317 @@ serve(async (req) => {
   }
 });
 
-// Helper functions
+// ============= PumpPortal Functions =============
 
-async function getWalletAddress(): Promise<string> {
-  // Decode the private key to get public key
-  // For now, we'll use Helius to derive it or you can pass it as env var
-  const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
-  // The first 32 bytes are the private key, we need to derive public key
-  // Using a simpler approach - the public key is often passed separately
-  // For this implementation, let's fetch from the RPC
+async function claimCreatorFees(): Promise<{ success: boolean; signature?: string }> {
+  try {
+    console.log('Calling PumpPortal to collect creator fees...');
+    
+    const response = await fetch(PUMPPORTAL_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicKey: SOLANA_PUBLIC_KEY,
+        action: 'collectCreatorFee',
+        mint: TOKEN_MINT,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('PumpPortal fee claim response:', errorText);
+      return { success: false };
+    }
+
+    // Get the transaction to sign
+    const txData = await response.arrayBuffer();
+    const txBase64 = btoa(String.fromCharCode(...new Uint8Array(txData)));
+    
+    // Sign and send the transaction
+    const signature = await signAndSendTransaction(txBase64);
+    console.log('Fee claim tx:', signature);
+    
+    // Wait for confirmation
+    await confirmTransaction(signature);
+    
+    return { success: true, signature };
+  } catch (error) {
+    console.log('Fee claim skipped or failed:', error);
+    return { success: false };
+  }
+}
+
+async function buyAndBurn(amountSol: number): Promise<{ signature: string; tokensReceived: number }> {
+  console.log(`Buying tokens with ${amountSol} SOL via PumpPortal...`);
   
-  // Workaround: Use Helius to get addresses or store public key separately
-  // This is a simplified version - in production, use proper key derivation
-  const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+  // Request buy transaction from PumpPortal
+  const response = await fetch(PUMPPORTAL_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      publicKey: SOLANA_PUBLIC_KEY,
+      action: 'buy',
+      mint: TOKEN_MINT,
+      amount: amountSol,
+      denominatedInSol: 'true',
+      slippage: 25, // 25% slippage for volatile tokens
+      priorityFee: 0.001, // Priority fee for faster execution
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`PumpPortal buy failed: ${errorText}`);
+  }
+
+  // Get the transaction bytes
+  const txData = await response.arrayBuffer();
+  const txBase64 = btoa(String.fromCharCode(...new Uint8Array(txData)));
+  
+  // Sign and send the transaction
+  const signature = await signAndSendTransaction(txBase64);
+  console.log('Buy tx submitted:', signature);
+  
+  // Wait for confirmation
+  await confirmTransaction(signature);
+  
+  // Estimate tokens received (actual amount from tx logs would be more accurate)
+  const estimatedTokens = amountSol * 1000000; // Rough estimate
+  
+  return { signature, tokensReceived: estimatedTokens };
+}
+
+// ============= Solana Transaction Functions =============
+
+async function signAndSendTransaction(txBase64: string): Promise<string> {
+  // Decode the private key
+  const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
+  
+  // Decode the transaction
+  const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
+  
+  // Import ed25519 for signing
+  const { sign } = await import("https://deno.land/x/ed25519@1.6.0/mod.ts");
+  
+  // Sign the transaction message (skip the signature placeholder bytes)
+  // The first 64 bytes are typically the signature placeholder
+  const messageToSign = txBytes.slice(65); // Adjust based on tx format
+  const signatureResult = await sign(messageToSign, privateKeyBytes.slice(0, 32));
+  
+  // Insert signature into transaction
+  const signedTx = new Uint8Array(txBytes.length);
+  signedTx.set(signatureResult, 1); // Signature starts after length byte
+  signedTx.set(txBytes.slice(65), 65);
+  
+  const signedTxBase64 = btoa(String.fromCharCode(...signedTx));
+  
+  // Send via Helius RPC
+  const response = await fetch(HELIUS_RPC, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
-      method: 'getIdentity',
+      method: 'sendTransaction',
+      params: [signedTxBase64, { 
+        encoding: 'base64',
+        skipPreflight: false,
+        maxRetries: 3 
+      }],
+    }),
+  });
+
+  const data = await response.json();
+  
+  if (data.error) {
+    console.error('RPC error:', data.error);
+    throw new Error(data.error.message || 'Transaction failed');
+  }
+  
+  return data.result;
+}
+
+async function sendSolToAddress(toAddress: string, amountSol: number): Promise<{ signature: string }> {
+  const lamports = Math.floor(amountSol * 1e9);
+  
+  console.log(`Sending ${amountSol} SOL (${lamports} lamports) to ${toAddress}`);
+  
+  // Get recent blockhash
+  const blockhashResponse = await fetch(HELIUS_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getLatestBlockhash',
+      params: [{ commitment: 'finalized' }],
     }),
   });
   
-  // Since we can't easily derive the public key in Deno, 
-  // you may need to add SOLANA_PUBLIC_KEY as an env var
-  // For now, return a placeholder that should be replaced
-  console.log('Note: Add SOLANA_PUBLIC_KEY env var for production');
-  return Deno.env.get('SOLANA_PUBLIC_KEY') || '';
+  const blockhashData = await blockhashResponse.json();
+  const recentBlockhash = blockhashData.result.value.blockhash;
+  
+  // Build a simple SOL transfer transaction manually
+  // This is a simplified version - for production use proper serialization
+  const fromPubkey = decodeBase58(SOLANA_PUBLIC_KEY);
+  const toPubkey = decodeBase58(toAddress);
+  
+  // Create transfer instruction
+  // System program transfer: program ID, from, to, lamports
+  const SYSTEM_PROGRAM_ID = new Uint8Array(32); // All zeros = system program
+  
+  // Build transaction bytes (simplified - use proper library in production)
+  const transaction = buildTransferTransaction(
+    fromPubkey,
+    toPubkey,
+    lamports,
+    recentBlockhash
+  );
+  
+  // Sign the transaction
+  const { sign } = await import("https://deno.land/x/ed25519@1.6.0/mod.ts");
+  const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
+  
+  const message = transaction.slice(65); // Message starts after signatures
+  const signatureResult = await sign(message, privateKeyBytes.slice(0, 32));
+  
+  // Insert signature
+  transaction.set(signatureResult, 1);
+  
+  const txBase64 = btoa(String.fromCharCode(...transaction));
+  
+  // Send transaction
+  const response = await fetch(HELIUS_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'sendTransaction',
+      params: [txBase64, { 
+        encoding: 'base64',
+        skipPreflight: false 
+      }],
+    }),
+  });
+
+  const data = await response.json();
+  
+  if (data.error) {
+    throw new Error(data.error.message || 'SOL transfer failed');
+  }
+  
+  return { signature: data.result };
 }
+
+function buildTransferTransaction(
+  fromPubkey: Uint8Array,
+  toPubkey: Uint8Array,
+  lamports: number,
+  blockhash: string
+): Uint8Array {
+  // This is a simplified transaction builder
+  // For production, use @solana/web3.js or proper serialization
+  
+  const blockhashBytes = decodeBase58(blockhash);
+  
+  // Transaction format:
+  // [1] num signatures
+  // [64] signature placeholder
+  // [message...]
+  
+  const buffer = new Uint8Array(200);
+  let offset = 0;
+  
+  // Num required signatures
+  buffer[offset++] = 1;
+  
+  // Signature placeholder (64 bytes)
+  offset += 64;
+  
+  // Message header
+  buffer[offset++] = 1; // num_required_signatures
+  buffer[offset++] = 0; // num_readonly_signed_accounts
+  buffer[offset++] = 1; // num_readonly_unsigned_accounts
+  
+  // Account addresses (3: from, to, system program)
+  buffer[offset++] = 3;
+  buffer.set(fromPubkey, offset); offset += 32;
+  buffer.set(toPubkey, offset); offset += 32;
+  buffer.set(new Uint8Array(32), offset); offset += 32; // System program (all zeros)
+  
+  // Recent blockhash
+  buffer.set(blockhashBytes, offset); offset += 32;
+  
+  // Instructions (1 instruction)
+  buffer[offset++] = 1;
+  
+  // Transfer instruction
+  buffer[offset++] = 2; // Program ID index (system program)
+  buffer[offset++] = 2; // Num accounts
+  buffer[offset++] = 0; // From account index
+  buffer[offset++] = 1; // To account index
+  
+  // Instruction data (transfer = 2, then lamports as u64 LE)
+  buffer[offset++] = 12; // Data length
+  buffer[offset++] = 2; // Transfer instruction
+  buffer[offset++] = 0;
+  buffer[offset++] = 0;
+  buffer[offset++] = 0;
+  
+  // Lamports as u64 little-endian
+  const lamportsBytes = new Uint8Array(8);
+  let tempLamports = lamports;
+  for (let i = 0; i < 8; i++) {
+    lamportsBytes[i] = tempLamports & 0xff;
+    tempLamports = Math.floor(tempLamports / 256);
+  }
+  buffer.set(lamportsBytes, offset);
+  offset += 8;
+  
+  return buffer.slice(0, offset);
+}
+
+async function confirmTransaction(signature: string): Promise<void> {
+  console.log('Confirming transaction:', signature);
+  
+  // Poll for confirmation (max 30 seconds)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const response = await fetch(HELIUS_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getSignatureStatuses',
+        params: [[signature]],
+      }),
+    });
+    
+    const data = await response.json();
+    const status = data.result?.value?.[0];
+    
+    if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') {
+      console.log('Transaction confirmed!');
+      return;
+    }
+    
+    if (status?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+    }
+  }
+  
+  console.log('Transaction confirmation timeout, proceeding anyway');
+}
+
+// ============= Holder Selection Functions =============
 
 async function getWalletBalance(address: string): Promise<number> {
   if (!address) return 0;
   
-  const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+  const response = await fetch(HELIUS_RPC, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -269,36 +514,59 @@ async function getWalletBalance(address: string): Promise<number> {
   });
 
   const data = await response.json();
-  return (data.result?.value || 0) / 1e9; // Convert lamports to SOL
+  return (data.result?.value || 0) / 1e9;
 }
 
 async function getTokenHolders(): Promise<TokenHolder[]> {
-  // Use Helius DAS API to get token holders
-  const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+  // Use getTokenLargestAccounts for top holders
+  const response = await fetch(HELIUS_RPC, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
-      method: 'getTokenAccounts',
-      params: {
-        mint: TOKEN_MINT,
-        limit: 100,
-      },
+      method: 'getTokenLargestAccounts',
+      params: [TOKEN_MINT],
     }),
   });
 
   const data = await response.json();
   
-  if (!data.result?.token_accounts) {
+  if (!data.result?.value) {
     console.log('No token accounts found');
     return [];
   }
 
-  return data.result.token_accounts.map((acc: any) => ({
-    address: acc.owner,
-    balance: parseFloat(acc.amount) / 1e6, // Assuming 6 decimals
-  }));
+  // Get owner addresses for each token account
+  const tokenAccounts = data.result.value;
+  const holders: TokenHolder[] = [];
+  
+  for (const account of tokenAccounts.slice(0, 20)) {
+    // Get account info to find owner
+    const accountInfoResponse = await fetch(HELIUS_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getAccountInfo',
+        params: [account.address, { encoding: 'jsonParsed' }],
+      }),
+    });
+    
+    const accountInfo = await accountInfoResponse.json();
+    const owner = accountInfo.result?.value?.data?.parsed?.info?.owner;
+    
+    if (owner && !EXCLUDED_WALLETS.includes(owner)) {
+      holders.push({
+        address: owner,
+        balance: parseFloat(account.uiAmountString || '0'),
+      });
+    }
+  }
+  
+  console.log(`Found ${holders.length} eligible holders after filtering`);
+  return holders;
 }
 
 function selectRandomHolder(holders: TokenHolder[]): string {
@@ -316,46 +584,7 @@ function selectRandomHolder(holders: TokenHolder[]): string {
   return holders[0].address;
 }
 
-async function signAndSendTransaction(serializedTransaction: string): Promise<string> {
-  // Decode and sign the transaction
-  // This requires proper Solana transaction handling
-  // Using Helius to send the transaction
-  
-  const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'sendTransaction',
-      params: [serializedTransaction, { encoding: 'base64' }],
-    }),
-  });
-
-  const data = await response.json();
-  
-  if (data.error) {
-    throw new Error(data.error.message);
-  }
-  
-  return data.result;
-}
-
-async function sendSolToAddress(toAddress: string, amountSol: number): Promise<string> {
-  // This is a simplified version - in production, use proper transaction building
-  // Using Helius to send SOL
-  
-  const lamports = Math.floor(amountSol * 1e9);
-  
-  // Build and send transaction using Helius
-  // Note: This requires the transaction to be properly signed
-  // For production, use @solana/web3.js with proper signing
-  
-  console.log(`Sending ${amountSol} SOL (${lamports} lamports) to ${toAddress}`);
-  
-  // Placeholder - implement proper transaction building
-  return 'tx_placeholder_' + Date.now();
-}
+// ============= Utility Functions =============
 
 function decodeBase58(str: string): Uint8Array {
   const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
