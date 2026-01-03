@@ -1,1 +1,4 @@
 project_id = "nqxuwymuezgdzyognmkl"
+
+[functions.coin-flip]
+verify_jwt = false
