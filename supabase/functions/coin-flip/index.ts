@@ -25,8 +25,13 @@ const EXCLUDED_WALLETS = [
   SOLANA_PUBLIC_KEY,
   '5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1', // Raydium
   'CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM', // Pump Curve
+  'CexgPodxeSJmVB8X9oFdg7Q81Dvi3t4MqofGpexjeo2k', // Bonding Curve (top holder)
   BURN_ADDRESS,
 ];
+
+// Maximum token balance to be eligible for rewards (50M tokens)
+// This filters out bonding curves and other large protocol wallets
+const MAX_ELIGIBLE_BALANCE = 50_000_000;
 
 interface TokenHolder {
   address: string;
@@ -777,15 +782,24 @@ async function getTokenHolders(): Promise<TokenHolder[]> {
     // IMPORTANT: ignore excluded wallets and zero-balance accounts
     if (!owner || EXCLUDED_WALLETS.includes(owner) || balance <= 0) continue;
 
+    // IMPORTANT: Skip wallets with more than MAX_ELIGIBLE_BALANCE (50M tokens)
+    // This filters out bonding curves and protocol wallets
+    if (balance > MAX_ELIGIBLE_BALANCE) {
+      console.log(`⚠️ Skipping ${owner} - balance ${balance.toLocaleString()} exceeds 50M cap`);
+      continue;
+    }
+
     balancesByOwner.set(owner, (balancesByOwner.get(owner) || 0) + balance);
   }
 
-  const holders: TokenHolder[] = Array.from(balancesByOwner.entries()).map(([address, balance]) => ({
-    address,
-    balance,
-  }));
+  const holders: TokenHolder[] = Array.from(balancesByOwner.entries())
+    .filter(([_, balance]) => balance <= MAX_ELIGIBLE_BALANCE) // Double-check after aggregation
+    .map(([address, balance]) => ({
+      address,
+      balance,
+    }));
 
-  console.log(`Found ${holders.length} eligible holders after filtering`);
+  console.log(`Found ${holders.length} eligible holders after filtering (max 50M tokens)`);
   return holders;
 }
 
