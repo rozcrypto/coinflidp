@@ -175,9 +175,9 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 2: Flip the coin (50/50)
+    // STEP 2: Flip the coin (35% burn, 65% holder)
     // ============================================================
-    const result = Math.random() < 0.5 ? 'burn' : 'holder';
+    const result = Math.random() < 0.35 ? 'burn' : 'holder';
     console.log('🎲 FLIP RESULT:', result.toUpperCase());
 
     const { data: flipRecord, error: insertError } = await supabase
