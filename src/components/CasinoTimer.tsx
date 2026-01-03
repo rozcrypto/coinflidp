@@ -10,10 +10,15 @@ interface CasinoTimerProps {
 
 const CasinoTimer = ({ seconds, onComplete, isRunning }: CasinoTimerProps) => {
   const [timeLeft, setTimeLeft] = useState(seconds);
+  const [wasRunning, setWasRunning] = useState(isRunning);
 
+  // Reset timer when transitioning from not running to running (after flip completes)
   useEffect(() => {
-    setTimeLeft(seconds);
-  }, [seconds]);
+    if (isRunning && !wasRunning) {
+      setTimeLeft(seconds);
+    }
+    setWasRunning(isRunning);
+  }, [isRunning, wasRunning, seconds]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -28,7 +33,7 @@ const CasinoTimer = ({ seconds, onComplete, isRunning }: CasinoTimerProps) => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning, seconds]);
+  }, [isRunning]);
 
   // Handle completion separately to avoid setState during render
   useEffect(() => {
