@@ -156,8 +156,9 @@ serve(async (req) => {
       }
     }
     
-    // Calculate usable amount (keep 0.0002 SOL reserve for tx fees)
-    const reserve = 0.0002;
+    // Calculate usable amount (keep enough for rent-exempt + tx fees)
+    // Dev wallet must keep at least 0.001 SOL to remain rent-exempt
+    const reserve = 0.001;
     const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, 0.1)) * 1000000) / 1000000;
     console.log('Amount to use for flip:', amountToUse, 'SOL');
 
