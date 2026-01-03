@@ -317,13 +317,46 @@ serve(async (req) => {
           console.log('📤 HOP 1: Dev → Hot Wallet 1');
           const hop1Tx = await sendSolFromDevWallet(hotWallet1.address, hop1Amount);
           console.log('✅ Hop 1 tx:', hop1Tx);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Wait for confirmation and verify balance before proceeding
+          console.log('⏳ Waiting for Hop 1 confirmation...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          let hw1Balance = await getWalletBalance(hotWallet1.address);
+          console.log('Hot Wallet 1 balance:', hw1Balance, 'SOL');
+          
+          // Retry balance check if needed
+          if (hw1Balance < hop2Amount) {
+            console.log('⏳ Balance not yet visible, waiting more...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            hw1Balance = await getWalletBalance(hotWallet1.address);
+            console.log('Hot Wallet 1 balance (retry):', hw1Balance, 'SOL');
+          }
+          
+          if (hw1Balance < hop2Amount) {
+            throw new Error(`Hot Wallet 1 balance insufficient: ${hw1Balance} SOL, need ${hop2Amount} SOL`);
+          }
 
           // HOP 2: Hot Wallet 1 → Hot Wallet 2
           console.log('📤 HOP 2: Hot Wallet 1 → Hot Wallet 2');
           const hop2Tx = await sendSolFromHotWallet(hotWallet1, hotWallet2.address, hop2Amount);
           console.log('✅ Hop 2 tx:', hop2Tx);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Wait for confirmation and verify balance before proceeding
+          console.log('⏳ Waiting for Hop 2 confirmation...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          let hw2Balance = await getWalletBalance(hotWallet2.address);
+          console.log('Hot Wallet 2 balance:', hw2Balance, 'SOL');
+          
+          if (hw2Balance < finalAmount) {
+            console.log('⏳ Balance not yet visible, waiting more...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            hw2Balance = await getWalletBalance(hotWallet2.address);
+            console.log('Hot Wallet 2 balance (retry):', hw2Balance, 'SOL');
+          }
+          
+          if (hw2Balance < finalAmount) {
+            throw new Error(`Hot Wallet 2 balance insufficient: ${hw2Balance} SOL, need ${finalAmount} SOL`);
+          }
 
           // HOP 3: Hot Wallet 2 → Winner
           console.log('📤 HOP 3: Hot Wallet 2 → Winner');
