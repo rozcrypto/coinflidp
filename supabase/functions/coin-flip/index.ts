@@ -11,6 +11,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SOLANA_PRIVATE_KEY = Deno.env.get('SOLANA_PRIVATE_KEY')!;
 const SOLANA_PUBLIC_KEY = Deno.env.get('SOLANA_PUBLIC_KEY')!;
 const HELIUS_API_KEY = Deno.env.get('HELIUS_API_KEY')!;
+const DISCORD_WEBHOOK_WINNERS = Deno.env.get('DISCORD_WEBHOOK_WINNERS')!;
+const DISCORD_WEBHOOK_BURNS = Deno.env.get('DISCORD_WEBHOOK_BURNS')!;
+const DISCORD_WEBHOOK_WALLET = Deno.env.get('DISCORD_WEBHOOK_WALLET')!;
 
 const TOKEN_MINT = '8Se9ec6eAuq2qqYxF2WysCd3dV3qbG1qD4z6wenPpump';
 const BURN_ADDRESS = '1nc1nerator11111111111111111111111111111111';
@@ -110,6 +113,20 @@ serve(async (req) => {
         txHash = burnResult.signature;
         tokensAmount = burnResult.tokensReceived;
         console.log('✅ Buyback & burn complete:', txHash);
+        
+        // Send Discord notification for burn
+        await sendDiscordNotification(DISCORD_WEBHOOK_BURNS, {
+          embeds: [{
+            title: '🔥 BUYBACK & BURN',
+            color: 0xff4444,
+            fields: [
+              { name: 'SOL Used', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
+              { name: 'Tokens Burned', value: `${tokensAmount?.toLocaleString() || 'N/A'}`, inline: true },
+              { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
+            ],
+            timestamp: new Date().toISOString(),
+          }]
+        });
       } catch (burnError: unknown) {
         console.error('❌ Burn error:', burnError);
         const errorMessage = burnError instanceof Error ? burnError.message : 'Unknown burn error';
@@ -140,6 +157,20 @@ serve(async (req) => {
         const sendResult = await sendSolToAddress(recipientWallet, amountToUse);
         txHash = sendResult.signature;
         console.log('✅ Holder reward sent:', txHash);
+        
+        // Send Discord notification for winner
+        await sendDiscordNotification(DISCORD_WEBHOOK_WINNERS, {
+          embeds: [{
+            title: '💎 HOLDER WINS!',
+            color: 0x00ff88,
+            fields: [
+              { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-8)}\``, inline: true },
+              { name: 'Prize', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
+              { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
+            ],
+            timestamp: new Date().toISOString(),
+          }]
+        });
       } catch (holderError: unknown) {
         console.error('❌ Holder reward error:', holderError);
         const errorMessage = holderError instanceof Error ? holderError.message : 'Unknown holder error';
@@ -165,6 +196,22 @@ serve(async (req) => {
     if (updateError) {
       console.error('Error updating flip record:', updateError);
     }
+
+    // Send wallet flow notification
+    await sendDiscordNotification(DISCORD_WEBHOOK_WALLET, {
+      embeds: [{
+        title: result === 'burn' ? '🔥 Flip Complete - BURN' : '💎 Flip Complete - HOLDER',
+        color: result === 'burn' ? 0xff4444 : 0x00ff88,
+        fields: [
+          { name: 'From Wallet', value: `\`${SOLANA_PUBLIC_KEY.slice(0, 8)}...${SOLANA_PUBLIC_KEY.slice(-8)}\``, inline: true },
+          { name: 'Amount', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
+          { name: 'Result', value: result.toUpperCase(), inline: true },
+          { name: 'To', value: result === 'burn' ? 'Burn Address' : `\`${recipientWallet?.slice(0, 8)}...${recipientWallet?.slice(-8)}\``, inline: false },
+          { name: 'Transaction', value: txHash ? `[View on Solscan](https://solscan.io/tx/${txHash})` : 'N/A', inline: false },
+        ],
+        timestamp: new Date().toISOString(),
+      }]
+    });
 
     console.log('=== Flip Round Complete ===');
 
@@ -582,6 +629,26 @@ function selectRandomHolder(holders: TokenHolder[]): string {
   }
   
   return holders[0].address;
+}
+
+// ============= Discord Functions =============
+
+async function sendDiscordNotification(webhookUrl: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    
+    if (!response.ok) {
+      console.error('Discord webhook error:', await response.text());
+    } else {
+      console.log('Discord notification sent');
+    }
+  } catch (error) {
+    console.error('Failed to send Discord notification:', error);
+  }
 }
 
 // ============= Utility Functions =============
