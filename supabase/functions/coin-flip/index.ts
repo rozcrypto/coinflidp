@@ -44,31 +44,36 @@ serve(async (req) => {
     console.log('=== Starting Coin Flip Round ===');
     console.log('Creator wallet:', SOLANA_PUBLIC_KEY);
 
-    // Step 1: Get balance BEFORE claiming fees
-    const balanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
-    console.log('Balance BEFORE claiming:', balanceBefore);
+    // ============================================================
+    // CRITICAL SAFETY: Record initial balance - we will NEVER touch this
+    // ============================================================
+    const INITIAL_BALANCE = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('🔒 PROTECTED INITIAL BALANCE:', INITIAL_BALANCE, 'SOL');
 
-    // Step 2: Claim creator fees from PumpPortal
-    console.log('Step 2: Claiming creator fees...');
+    // Step 1: Claim creator fees from PumpPortal
+    console.log('Step 1: Claiming creator fees...');
     const claimedFees = await claimCreatorFees();
     console.log('Claimed fees result:', claimedFees);
 
-    // Step 3: Get balance AFTER claiming fees
+    // Step 2: Get balance AFTER claiming fees
     const balanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Balance AFTER claiming:', balanceAfter);
 
-    // CRITICAL: Only use the DIFFERENCE (actual claimed fees), not total balance
-    // This protects the wallet from draining existing funds
-    const actualClaimedAmount = Math.max(0, balanceAfter - balanceBefore);
-    console.log('Actual claimed amount:', actualClaimedAmount);
+    // ============================================================
+    // CRITICAL: Calculate ONLY the newly claimed amount
+    // This is the ONLY SOL we are allowed to use
+    // ============================================================
+    const actualClaimedAmount = Math.max(0, balanceAfter - INITIAL_BALANCE);
+    console.log('💰 Actual claimed amount (ONLY this can be used):', actualClaimedAmount);
 
     // Minimum threshold to proceed (0.001 SOL minimum claimed)
     if (actualClaimedAmount < 0.001) {
-      console.log('No new fees claimed, skipping round');
+      console.log('No new fees claimed, skipping round - PROTECTING WALLET');
       return new Response(JSON.stringify({ 
         success: false, 
         message: 'No creator fees to claim this round',
-        claimedAmount: actualClaimedAmount
+        claimedAmount: actualClaimedAmount,
+        protectedBalance: INITIAL_BALANCE
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -77,6 +82,39 @@ serve(async (req) => {
     // Use 90% of CLAIMED FEES ONLY (reserve 10% for tx fees)
     const amountToUse = Math.floor((actualClaimedAmount * 0.9) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse);
+
+    // ============================================================
+    // SAFETY CHECK: Verify we're not using more than claimed
+    // ============================================================
+    if (amountToUse > actualClaimedAmount) {
+      console.error('🚫 SAFETY BLOCK: Attempted to use more than claimed!');
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Safety block: amount exceeds claimed fees',
+        attempted: amountToUse,
+        claimed: actualClaimedAmount
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============================================================
+    // SAFETY CHECK: Ensure we never drain below initial balance
+    // ============================================================
+    const expectedBalanceAfterFlip = balanceAfter - amountToUse - 0.001; // 0.001 for tx fee
+    if (expectedBalanceAfterFlip < INITIAL_BALANCE - 0.002) { // 0.002 tolerance for tx fees
+      console.error('🚫 SAFETY BLOCK: Would drain below initial balance!');
+      console.error(`Initial: ${INITIAL_BALANCE}, After: ${balanceAfter}, Using: ${amountToUse}, Expected: ${expectedBalanceAfterFlip}`);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Safety block: would reduce balance below initial',
+        initialBalance: INITIAL_BALANCE,
+        currentBalance: balanceAfter,
+        attemptedUse: amountToUse
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     if (amountToUse <= 0) {
       console.log('Claimed amount too small after tx fee reserve');
@@ -87,6 +125,11 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log('✅ Safety checks passed. Proceeding with flip...');
+    console.log(`   Initial Balance: ${INITIAL_BALANCE} SOL`);
+    console.log(`   Claimed Amount: ${actualClaimedAmount} SOL`);
+    console.log(`   Using for Flip: ${amountToUse} SOL`);
 
     // Step 3: Flip the coin (50/50)
     const result = Math.random() < 0.5 ? 'burn' : 'holder';
@@ -117,6 +160,7 @@ serve(async (req) => {
     if (result === 'burn') {
       // 🔥 BURN: Buyback tokens via PumpPortal and burn them
       console.log('🔥 Executing buyback and burn via PumpPortal...');
+      console.log(`   Using ONLY ${amountToUse} SOL from claimed fees`);
       
       try {
         const burnResult = await buyAndBurn(amountToUse);
@@ -149,6 +193,7 @@ serve(async (req) => {
     } else {
       // 💎 HOLDER: Send SOL to random holder
       console.log('💎 Executing holder reward...');
+      console.log(`   Using ONLY ${amountToUse} SOL from claimed fees`);
       
       try {
         // Get token holders (filtered)
@@ -158,10 +203,23 @@ serve(async (req) => {
         }
 
         console.log(`Found ${holders.length} eligible holders`);
+        
+        // Log all holders for verification
+        console.log('Eligible holders:');
+        holders.forEach((h, i) => {
+          console.log(`  ${i + 1}. ${h.address} - ${h.balance.toLocaleString()} tokens`);
+        });
 
         // Select random holder (weighted by balance)
         recipientWallet = selectRandomHolder(holders);
         console.log('Selected winner:', recipientWallet);
+        
+        // Verify the winner is in our holders list
+        const winnerInList = holders.find(h => h.address === recipientWallet);
+        if (!winnerInList) {
+          throw new Error(`Selected winner ${recipientWallet} not found in holders list - SAFETY BLOCK`);
+        }
+        console.log(`✅ Winner verified as holder with ${winnerInList.balance.toLocaleString()} tokens`);
 
         // Send SOL to holder
         const sendResult = await sendSolToAddress(recipientWallet, amountToUse);
@@ -176,6 +234,7 @@ serve(async (req) => {
             fields: [
               { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-8)}\``, inline: true },
               { name: 'Prize', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
+              { name: 'Token Balance', value: `${winnerInList.balance.toLocaleString()} tokens`, inline: true },
               { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
             ],
             timestamp: new Date().toISOString(),
