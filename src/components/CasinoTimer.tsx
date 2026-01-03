@@ -21,15 +21,22 @@ const CasinoTimer = ({ seconds, onComplete, isRunning }: CasinoTimerProps) => {
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          onComplete();
-          return seconds;
+          return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning, seconds, onComplete]);
+  }, [isRunning, seconds]);
+
+  // Handle completion separately to avoid setState during render
+  useEffect(() => {
+    if (timeLeft === 0 && isRunning) {
+      onComplete();
+      setTimeLeft(seconds);
+    }
+  }, [timeLeft, isRunning, onComplete, seconds]);
 
   const minutes = Math.floor(timeLeft / 60);
   const secs = timeLeft % 60;
