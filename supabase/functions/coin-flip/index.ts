@@ -139,7 +139,7 @@ serve(async (req) => {
     let devBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Dev wallet balance:', devBalance, 'SOL');
     
-    const MIN_BALANCE_FOR_FLIP = 0.002; // Need at least this much to run a flip
+    const MIN_BALANCE_FOR_FLIP = 0.0005; // Need at least this much to run a flip
     
     // If balance is low, try to claim creator fees
     if (devBalance < MIN_BALANCE_FOR_FLIP) {
@@ -156,12 +156,12 @@ serve(async (req) => {
       }
     }
     
-    // Calculate usable amount (keep 0.001 SOL reserve)
-    const reserve = 0.001;
-    const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, 0.1)) * 1000) / 1000;
+    // Calculate usable amount (keep 0.0002 SOL reserve for tx fees)
+    const reserve = 0.0002;
+    const amountToUse = Math.floor(Math.max(0, Math.min(devBalance - reserve, 0.1)) * 1000000) / 1000000;
     console.log('Amount to use for flip:', amountToUse, 'SOL');
 
-    if (amountToUse < 0.001) {
+    if (amountToUse < 0.0003) {
       console.log('❌ Not enough balance for flip. Have:', devBalance, 'Need at least:', MIN_BALANCE_FOR_FLIP);
       return new Response(JSON.stringify({ 
         success: false, 
@@ -309,8 +309,8 @@ serve(async (req) => {
 
           console.log(`Hop amounts: ${hop1Amount} → ${hop2Amount} → ${finalAmount} SOL`);
 
-          if (finalAmount < 0.0005) {
-            throw new Error(`Amount too small for multi-hop. Need at least 0.001 SOL input, have ${amountToUse} SOL`);
+          if (finalAmount < 0.0001) {
+            throw new Error(`Amount too small for multi-hop. Need at least 0.0003 SOL input, have ${amountToUse} SOL`);
           }
 
           // HOP 1: Dev Wallet → Hot Wallet 1
@@ -1014,8 +1014,8 @@ async function sweepHotWalletBalanceToDevWallet(wallet: HotWallet): Promise<{ wa
   const balanceSol = await getWalletBalance(wallet.address);
   console.log(`🧹 Sweeping hot wallet ${wallet.address} balance:`, balanceSol, 'SOL');
 
-  const feeBuffer = 0.00002; // small buffer to cover tx fee variance
-  const rentKeep = 0.001; // keep rent-exempt buffer so the account stays valid
+  const feeBuffer = 0.00001; // small buffer to cover tx fee variance
+  const rentKeep = 0.0001; // minimal rent buffer
   const sweptAmountSol = Math.max(0, Math.floor((balanceSol - feeBuffer - rentKeep) * 1e9) / 1e9);
 
   if (sweptAmountSol <= 0) {
