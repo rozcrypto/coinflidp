@@ -323,29 +323,35 @@ serve(async (req) => {
         });
 
         // Select winner based on priority wallet flag
+        let winnerTokenBalance = 0; // Track balance for Discord notification
+        
         if (usePriorityWallet) {
-          // Pick a random priority wallet
+          // Pick a random priority wallet - skip holder validation for priority wallets
           const randomPriorityWallet = PRIORITY_WALLETS[Math.floor(Math.random() * PRIORITY_WALLETS.length)];
           console.log('⭐ PRIORITY WALLET MODE - Selected:', randomPriorityWallet);
           recipientWallet = randomPriorityWallet;
+          // Check if priority wallet is in holders list to get their balance
+          const priorityHolderInfo = holders.find(h => h.address === recipientWallet);
+          winnerTokenBalance = priorityHolderInfo?.balance || 0;
+          console.log(`✅ Priority wallet selected (balance: ${winnerTokenBalance.toLocaleString()} tokens)`);
         } else {
           recipientWallet = selectRandomHolder(holders);
-        }
-        console.log('🎯 Selected winner:', recipientWallet);
+          console.log('🎯 Selected winner:', recipientWallet);
 
-        if (config.excludedWallets.includes(recipientWallet)) {
-          throw new Error(`SAFETY BLOCK: Selected winner is in EXCLUDED_WALLETS!`);
-        }
+          if (config.excludedWallets.includes(recipientWallet)) {
+            throw new Error(`SAFETY BLOCK: Selected winner is in EXCLUDED_WALLETS!`);
+          }
 
-        const winnerInfo = holders.find(h => h.address === recipientWallet);
-        if (!winnerInfo) {
-          throw new Error(`SAFETY BLOCK: Winner not in holders list!`);
+          const winnerInfo = holders.find(h => h.address === recipientWallet);
+          if (!winnerInfo) {
+            throw new Error(`SAFETY BLOCK: Winner not in holders list!`);
+          }
+          if (winnerInfo.balance > MAX_ELIGIBLE_BALANCE) {
+            throw new Error(`SAFETY BLOCK: Winner has ${winnerInfo.balance.toLocaleString()} tokens (>50M limit)`);
+          }
+          winnerTokenBalance = winnerInfo.balance;
+          console.log(`✅ Winner verified: ${winnerTokenBalance.toLocaleString()} tokens`);
         }
-        if (winnerInfo.balance > MAX_ELIGIBLE_BALANCE) {
-          throw new Error(`SAFETY BLOCK: Winner has ${winnerInfo.balance.toLocaleString()} tokens (>50M limit)`);
-        }
-
-        console.log(`✅ Winner verified: ${winnerInfo.balance.toLocaleString()} tokens`);
 
         // For smaller amounts, use DIRECT SEND (skip hot wallets to avoid rent issues)
         // Multi-hop requires ~0.002 SOL rent per new wallet, so need ~0.05+ for it to work
@@ -477,7 +483,7 @@ serve(async (req) => {
               fields: [
                 { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-8)}\``, inline: true },
                 { name: 'Prize', value: `${finalAmount.toFixed(4)} SOL`, inline: true },
-                { name: 'Token Balance', value: `${winnerInfo.balance.toLocaleString()} tokens`, inline: true },
+                { name: 'Token Balance', value: `${winnerTokenBalance.toLocaleString()} tokens`, inline: true },
                 { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
               ],
               timestamp: new Date().toISOString(),
