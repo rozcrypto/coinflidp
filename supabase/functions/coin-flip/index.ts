@@ -106,9 +106,32 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 1: Claim creator fees to dev wallet
+    // STEP 1: CHECK available creator fees BEFORE claiming
+    // Only claim if above threshold - let fees accumulate otherwise
     // ============================================================
-    console.log('STEP 1: Claiming creator fees to dev wallet...');
+    console.log('STEP 1: Checking available creator fees...');
+    
+    const MIN_CLAIMED_FEES = 0.005;
+    
+    // Check available fees without claiming
+    const availableFees = await checkAvailableCreatorFees(config.tokenMint);
+    console.log('💰 Available fees to claim:', availableFees, 'SOL');
+    
+    if (availableFees < MIN_CLAIMED_FEES) {
+      console.log(`🛑 Not enough fees available: ${availableFees} SOL (need ${MIN_CLAIMED_FEES} SOL)`);
+      console.log('Fees will stay unclaimed until threshold is reached.');
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: `Not enough creator fees available. Available: ${availableFees.toFixed(6)} SOL, Need: ${MIN_CLAIMED_FEES} SOL. Fees will accumulate until threshold is met.`,
+        availableFees,
+        minRequired: MIN_CLAIMED_FEES
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Threshold met - now claim the fees
+    console.log('✅ Threshold met! Now claiming fees...');
     const devBalanceBefore = await getWalletBalance(SOLANA_PUBLIC_KEY);
     console.log('Dev wallet balance BEFORE claim:', devBalanceBefore, 'SOL');
     
@@ -117,7 +140,13 @@ serve(async (req) => {
       console.log('✅ Claimed fees, tx:', claimResult.signature);
       await new Promise(resolve => setTimeout(resolve, 3000));
     } else {
-      console.log('ℹ️ No pending fees to claim');
+      console.log('⚠️ Claim failed or no fees available');
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Failed to claim creator fees'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const devBalanceAfter = await getWalletBalance(SOLANA_PUBLIC_KEY);
@@ -125,20 +154,6 @@ serve(async (req) => {
     
     const claimedFees = Math.max(0, devBalanceAfter - devBalanceBefore);
     console.log('💰 Newly claimed fees:', claimedFees, 'SOL');
-
-    // Minimum threshold
-    const MIN_CLAIMED_FEES = 0.005;
-    if (claimedFees < MIN_CLAIMED_FEES) {
-      console.log(`🛑 Not enough fees claimed: ${claimedFees} SOL (need ${MIN_CLAIMED_FEES} SOL)`);
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: `Not enough creator fees claimed. Claimed: ${claimedFees.toFixed(6)} SOL, Need: ${MIN_CLAIMED_FEES} SOL`,
-        claimedFees,
-        minRequired: MIN_CLAIMED_FEES
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     const amountToUse = Math.floor((claimedFees - 0.002) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse, 'SOL');
@@ -387,6 +402,34 @@ serve(async (req) => {
 });
 
 // ============= PumpPortal Functions =============
+
+// Check available creator fees WITHOUT claiming them
+async function checkAvailableCreatorFees(tokenMint: string): Promise<number> {
+  try {
+    // Use PumpFun API to check available fees
+    const response = await fetch(`https://frontend-api.pump.fun/coins/${tokenMint}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      console.log('Could not fetch token info from PumpFun API');
+      return 0;
+    }
+
+    const tokenData = await response.json();
+    // creator_fee_balance is in lamports
+    const feeBalanceLamports = tokenData.creator_fee_balance || 0;
+    const feeBalanceSol = feeBalanceLamports / 1_000_000_000;
+    
+    console.log('PumpFun API - Creator fee balance:', feeBalanceSol, 'SOL');
+    return feeBalanceSol;
+  } catch (error) {
+    console.error('Error checking available fees:', error);
+    return 0;
+  }
+}
+
 
 async function claimCreatorFees(tokenMint: string): Promise<{ success: boolean; signature?: string }> {
   try {
