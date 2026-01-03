@@ -67,76 +67,100 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // CRITICAL: ONLY proceed if claimCreatorFees API call succeeds
-    // We NEVER touch any existing balance - only newly claimed fees
+    // NEW APPROACH: Detect auto-claimed fees from PumpPortal
+    // PumpPortal auto-claims creator fees to dev wallet on trades
+    // We track balance AFTER each flip to detect NEW incoming fees
     // ============================================================
     
-    // Step 1: Try to claim creator fees from PumpPortal
-    console.log('Step 1: Attempting to claim creator fees from PumpPortal API...');
-    const claimedFees = await claimCreatorFees();
-    console.log('Claimed fees result:', claimedFees);
+    // Step 1: Get current wallet balance
+    console.log('Step 1: Getting current wallet balance...');
+    const currentBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Current balance:', currentBalance, 'SOL');
 
-    // ============================================================
-    // HARD STOP: If claim failed or no claimedAmount, DO NOTHING
-    // This ensures we NEVER touch dev buy/sell profits or existing balance
-    // ============================================================
-    if (!claimedFees.success || !claimedFees.claimedAmount || claimedFees.claimedAmount <= 0) {
-      console.log('🛑 NO CREATOR FEES CLAIMED - STOPPING COMPLETELY');
-      console.log('   This protects: existing balance, dev buy profits, dev sell profits');
+    // Step 2: Get the last recorded balance after previous flip
+    const { data: lastBalanceRecord } = await supabase
+      .from('wallet_balance_tracker')
+      .select('balance_after_flip, recorded_at')
+      .eq('wallet_address', SOLANA_PUBLIC_KEY)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    let lastRecordedBalance = 0;
+    if (lastBalanceRecord) {
+      lastRecordedBalance = Number(lastBalanceRecord.balance_after_flip);
+      console.log('Last recorded balance after flip:', lastRecordedBalance, 'SOL');
+      console.log('Recorded at:', lastBalanceRecord.recorded_at);
+    } else {
+      // First time running - record current balance as baseline
+      // This means first flip will use 0 (to establish baseline safely)
+      console.log('⚠️ First run - establishing baseline balance');
+      await supabase.from('wallet_balance_tracker').insert({
+        wallet_address: SOLANA_PUBLIC_KEY,
+        balance_after_flip: currentBalance,
+      });
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'No creator fees claimed from PumpPortal API - wallet untouched',
-        claimResult: claimedFees
+        message: 'First run - baseline established. Next flip will detect new fees.',
+        baselineBalance: currentBalance
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // We have a verified claimed amount from the API
-    const actualClaimedAmount = claimedFees.claimedAmount;
-    console.log('💰 VERIFIED claimed amount from API:', actualClaimedAmount, 'SOL');
+    // ============================================================
+    // CRITICAL: Calculate NEW fees = current balance - last recorded
+    // This is the ONLY SOL we are allowed to use (auto-claimed fees)
+    // ============================================================
+    const newFees = Math.max(0, currentBalance - lastRecordedBalance);
+    console.log('💰 NEW FEES detected (auto-claimed by PumpPortal):', newFees, 'SOL');
 
     // Minimum threshold (0.001 SOL)
-    if (actualClaimedAmount < 0.001) {
-      console.log('Claimed amount too small, skipping round');
+    if (newFees < 0.001) {
+      console.log('🛑 NO NEW FEES DETECTED - STOPPING');
+      console.log('   Current balance:', currentBalance);
+      console.log('   Last recorded:', lastRecordedBalance);
+      console.log('   Difference:', newFees);
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Creator fees too small this round',
-        claimedAmount: actualClaimedAmount
+        message: 'No new creator fees detected since last flip',
+        currentBalance,
+        lastRecordedBalance,
+        newFees
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Use 90% of CLAIMED FEES ONLY (reserve 10% for tx fees)
-    const amountToUse = Math.floor((actualClaimedAmount * 0.9) * 1000) / 1000;
+    // Use 90% of NEW FEES ONLY (reserve 10% for tx fees)
+    const amountToUse = Math.floor((newFees * 0.9) * 1000) / 1000;
     console.log('Amount to use for flip:', amountToUse);
 
-    // Safety check: never use more than what was claimed
-    if (amountToUse > actualClaimedAmount) {
-      console.error('🚫 SAFETY BLOCK: Attempted to use more than claimed!');
+    // Safety check: never use more than new fees
+    if (amountToUse > newFees) {
+      console.error('🚫 SAFETY BLOCK: Attempted to use more than new fees!');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Safety block: amount exceeds claimed fees',
+        message: 'Safety block: amount exceeds new fees',
         attempted: amountToUse,
-        claimed: actualClaimedAmount
+        newFees: newFees
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
     
     if (amountToUse <= 0) {
-      console.log('Claimed amount too small after tx fee reserve');
+      console.log('New fees too small after tx fee reserve');
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Claimed fees too small after tx fee reserve' 
+        message: 'New fees too small after tx fee reserve' 
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     console.log('✅ Safety checks passed. Proceeding with flip...');
-    console.log(`   Verified Claimed Amount: ${actualClaimedAmount} SOL`);
+    console.log(`   New Fees Detected: ${newFees} SOL`);
     console.log(`   Using for Flip: ${amountToUse} SOL`);
 
     // Step 3: Flip the coin (50/50)
@@ -290,6 +314,20 @@ serve(async (req) => {
       }]
     });
 
+    // ============================================================
+    // CRITICAL: Record balance AFTER flip for next round detection
+    // This is how we track new incoming fees
+    // ============================================================
+    const balanceAfterFlip = await getWalletBalance(SOLANA_PUBLIC_KEY);
+    console.log('Recording balance after flip:', balanceAfterFlip, 'SOL');
+    
+    await supabase.from('wallet_balance_tracker').insert({
+      wallet_address: SOLANA_PUBLIC_KEY,
+      balance_after_flip: balanceAfterFlip,
+      flip_id: flipRecord.id
+    });
+    console.log('✅ Balance recorded for next round detection');
+
     console.log('=== Flip Round Complete ===');
 
     return new Response(JSON.stringify({ 
@@ -298,7 +336,8 @@ serve(async (req) => {
       txHash,
       amountSol: amountToUse,
       amountTokens: tokensAmount,
-      recipientWallet
+      recipientWallet,
+      newBalanceRecorded: balanceAfterFlip
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
