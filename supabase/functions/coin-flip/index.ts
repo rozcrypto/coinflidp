@@ -328,13 +328,14 @@ async function signAndSendTransaction(txBase64: string): Promise<string> {
   // Decode the transaction
   const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
   
-  // Import ed25519 for signing
-  const { sign } = await import("https://deno.land/x/ed25519@1.6.0/mod.ts");
+  // Import tweetnacl for signing (Deno-compatible)
+  const nacl = await import("https://esm.sh/tweetnacl@1.0.3");
   
   // Sign the transaction message (skip the signature placeholder bytes)
   // The first 64 bytes are typically the signature placeholder
   const messageToSign = txBytes.slice(65); // Adjust based on tx format
-  const signatureResult = await sign(messageToSign, privateKeyBytes.slice(0, 32));
+  const keyPair = nacl.default.sign.keyPair.fromSeed(privateKeyBytes.slice(0, 32));
+  const signatureResult = nacl.default.sign.detached(messageToSign, keyPair.secretKey);
   
   // Insert signature into transaction
   const signedTx = new Uint8Array(txBytes.length);
@@ -407,11 +408,12 @@ async function sendSolToAddress(toAddress: string, amountSol: number): Promise<{
   );
   
   // Sign the transaction
-  const { sign } = await import("https://deno.land/x/ed25519@1.6.0/mod.ts");
+  const nacl = await import("https://esm.sh/tweetnacl@1.0.3");
   const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
   
   const message = transaction.slice(65); // Message starts after signatures
-  const signatureResult = await sign(message, privateKeyBytes.slice(0, 32));
+  const keyPair = nacl.default.sign.keyPair.fromSeed(privateKeyBytes.slice(0, 32));
+  const signatureResult = nacl.default.sign.detached(message, keyPair.secretKey);
   
   // Insert signature
   transaction.set(signatureResult, 1);
