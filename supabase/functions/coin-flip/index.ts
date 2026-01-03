@@ -322,52 +322,36 @@ async function buyAndBurn(amountSol: number): Promise<{ signature: string; token
 // ============= Solana Transaction Functions =============
 
 async function signAndSendTransaction(txBase64: string): Promise<string> {
+  const { 
+    Connection, 
+    VersionedTransaction, 
+    Keypair 
+  } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
   // Decode the private key
   const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
+  const keypair = Keypair.fromSecretKey(privateKeyBytes);
   
-  // Decode the transaction
+  // Decode the transaction from base64
   const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
   
-  // Import tweetnacl for signing (Deno-compatible)
-  const nacl = await import("https://esm.sh/tweetnacl@1.0.3");
+  // Deserialize as VersionedTransaction (PumpPortal uses versioned transactions)
+  const transaction = VersionedTransaction.deserialize(txBytes);
   
-  // Sign the transaction message (skip the signature placeholder bytes)
-  // The first 64 bytes are typically the signature placeholder
-  const messageToSign = txBytes.slice(65); // Adjust based on tx format
-  const keyPair = nacl.default.sign.keyPair.fromSeed(privateKeyBytes.slice(0, 32));
-  const signatureResult = nacl.default.sign.detached(messageToSign, keyPair.secretKey);
+  // Sign the transaction
+  transaction.sign([keypair]);
   
-  // Insert signature into transaction
-  const signedTx = new Uint8Array(txBytes.length);
-  signedTx.set(signatureResult, 1); // Signature starts after length byte
-  signedTx.set(txBytes.slice(65), 65);
+  // Create connection and send
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
   
-  const signedTxBase64 = btoa(String.fromCharCode(...signedTx));
-  
-  // Send via Helius RPC
-  const response = await fetch(HELIUS_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'sendTransaction',
-      params: [signedTxBase64, { 
-        encoding: 'base64',
-        skipPreflight: false,
-        maxRetries: 3 
-      }],
-    }),
+  const signature = await connection.sendRawTransaction(transaction.serialize(), {
+    skipPreflight: false,
+    maxRetries: 3,
   });
-
-  const data = await response.json();
   
-  if (data.error) {
-    console.error('RPC error:', data.error);
-    throw new Error(data.error.message || 'Transaction failed');
-  }
+  console.log('Transaction sent:', signature);
   
-  return data.result;
+  return signature;
 }
 
 async function sendSolToAddress(toAddress: string, amountSol: number): Promise<{ signature: string }> {
@@ -375,141 +359,65 @@ async function sendSolToAddress(toAddress: string, amountSol: number): Promise<{
   
   console.log(`Sending ${amountSol} SOL (${lamports} lamports) to ${toAddress}`);
   
-  // Get recent blockhash
-  const blockhashResponse = await fetch(HELIUS_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getLatestBlockhash',
-      params: [{ commitment: 'finalized' }],
-    }),
-  });
+  // Import Solana web3.js
+  const { 
+    Connection, 
+    PublicKey, 
+    Transaction, 
+    SystemProgram, 
+    Keypair,
+    sendAndConfirmRawTransaction
+  } = await import("https://esm.sh/@solana/web3.js@1.87.6");
   
-  const blockhashData = await blockhashResponse.json();
-  const recentBlockhash = blockhashData.result.value.blockhash;
+  const nacl = await import("https://esm.sh/tweetnacl@1.0.3");
   
-  // Build a simple SOL transfer transaction manually
-  // This is a simplified version - for production use proper serialization
-  const fromPubkey = decodeBase58(SOLANA_PUBLIC_KEY);
-  const toPubkey = decodeBase58(toAddress);
+  // Create connection
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
   
-  // Create transfer instruction
-  // System program transfer: program ID, from, to, lamports
-  const SYSTEM_PROGRAM_ID = new Uint8Array(32); // All zeros = system program
+  // Decode private key and create keypair
+  const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
+  const keypair = Keypair.fromSecretKey(privateKeyBytes);
   
-  // Build transaction bytes (simplified - use proper library in production)
-  const transaction = buildTransferTransaction(
-    fromPubkey,
-    toPubkey,
-    lamports,
-    recentBlockhash
+  // Create transaction
+  const fromPubkey = keypair.publicKey;
+  const toPubkey = new PublicKey(toAddress);
+  
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey,
+      toPubkey,
+      lamports,
+    })
   );
   
-  // Sign the transaction
-  const nacl = await import("https://esm.sh/tweetnacl@1.0.3");
-  const privateKeyBytes = decodeBase58(SOLANA_PRIVATE_KEY);
+  // Get recent blockhash
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = fromPubkey;
   
-  const message = transaction.slice(65); // Message starts after signatures
-  const keyPair = nacl.default.sign.keyPair.fromSeed(privateKeyBytes.slice(0, 32));
-  const signatureResult = nacl.default.sign.detached(message, keyPair.secretKey);
+  // Sign transaction
+  transaction.sign(keypair);
   
-  // Insert signature
-  transaction.set(signatureResult, 1);
+  // Serialize and send
+  const rawTransaction = transaction.serialize();
   
-  const txBase64 = btoa(String.fromCharCode(...transaction));
-  
-  // Send transaction
-  const response = await fetch(HELIUS_RPC, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'sendTransaction',
-      params: [txBase64, { 
-        encoding: 'base64',
-        skipPreflight: false 
-      }],
-    }),
+  const signature = await connection.sendRawTransaction(rawTransaction, {
+    skipPreflight: false,
+    maxRetries: 3,
   });
-
-  const data = await response.json();
   
-  if (data.error) {
-    throw new Error(data.error.message || 'SOL transfer failed');
-  }
+  console.log('Transaction sent:', signature);
   
-  return { signature: data.result };
-}
-
-function buildTransferTransaction(
-  fromPubkey: Uint8Array,
-  toPubkey: Uint8Array,
-  lamports: number,
-  blockhash: string
-): Uint8Array {
-  // This is a simplified transaction builder
-  // For production, use @solana/web3.js or proper serialization
+  // Wait for confirmation
+  await connection.confirmTransaction({
+    signature,
+    blockhash,
+    lastValidBlockHeight,
+  }, 'confirmed');
   
-  const blockhashBytes = decodeBase58(blockhash);
+  console.log('Transaction confirmed:', signature);
   
-  // Transaction format:
-  // [1] num signatures
-  // [64] signature placeholder
-  // [message...]
-  
-  const buffer = new Uint8Array(200);
-  let offset = 0;
-  
-  // Num required signatures
-  buffer[offset++] = 1;
-  
-  // Signature placeholder (64 bytes)
-  offset += 64;
-  
-  // Message header
-  buffer[offset++] = 1; // num_required_signatures
-  buffer[offset++] = 0; // num_readonly_signed_accounts
-  buffer[offset++] = 1; // num_readonly_unsigned_accounts
-  
-  // Account addresses (3: from, to, system program)
-  buffer[offset++] = 3;
-  buffer.set(fromPubkey, offset); offset += 32;
-  buffer.set(toPubkey, offset); offset += 32;
-  buffer.set(new Uint8Array(32), offset); offset += 32; // System program (all zeros)
-  
-  // Recent blockhash
-  buffer.set(blockhashBytes, offset); offset += 32;
-  
-  // Instructions (1 instruction)
-  buffer[offset++] = 1;
-  
-  // Transfer instruction
-  buffer[offset++] = 2; // Program ID index (system program)
-  buffer[offset++] = 2; // Num accounts
-  buffer[offset++] = 0; // From account index
-  buffer[offset++] = 1; // To account index
-  
-  // Instruction data (transfer = 2, then lamports as u64 LE)
-  buffer[offset++] = 12; // Data length
-  buffer[offset++] = 2; // Transfer instruction
-  buffer[offset++] = 0;
-  buffer[offset++] = 0;
-  buffer[offset++] = 0;
-  
-  // Lamports as u64 little-endian
-  const lamportsBytes = new Uint8Array(8);
-  let tempLamports = lamports;
-  for (let i = 0; i < 8; i++) {
-    lamportsBytes[i] = tempLamports & 0xff;
-    tempLamports = Math.floor(tempLamports / 256);
-  }
-  buffer.set(lamportsBytes, offset);
-  offset += 8;
-  
-  return buffer.slice(0, offset);
+  return { signature };
 }
 
 async function confirmTransaction(signature: string): Promise<void> {
