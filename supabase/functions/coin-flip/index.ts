@@ -476,9 +476,12 @@ async function buyAndBurn(amountSol: number): Promise<{ signature: string; token
 }
 
 async function buyAndBurnFromFlipWallet(amountSol: number, wallet: FlipWallet): Promise<{ signature: string; tokensReceived: number }> {
-  console.log(`Buying tokens with ${amountSol} SOL from flip wallet via PumpPortal...`);
+  console.log(`🔥 BUYBACK & BURN: Using ${amountSol} SOL from flip wallet`);
+  console.log(`   Flip wallet: ${wallet.address}`);
+  console.log(`   Step 1: Buy tokens via PumpPortal`);
+  console.log(`   Step 2: Transfer tokens to burn address`);
   
-  // Request buy transaction from PumpPortal using flip wallet address
+  // STEP 1: Buy tokens via PumpPortal using flip wallet's SOL
   const response = await fetch(PUMPPORTAL_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -498,19 +501,151 @@ async function buyAndBurnFromFlipWallet(amountSol: number, wallet: FlipWallet): 
     throw new Error(`PumpPortal buy failed: ${errorText}`);
   }
 
-  // Get the transaction bytes
   const txData = await response.arrayBuffer();
   const txBase64 = btoa(String.fromCharCode(...new Uint8Array(txData)));
   
-  // Sign and send using flip wallet private key
-  const signature = await signAndSendTransactionWithKey(txBase64, wallet.privateKey);
-  console.log('Buy tx submitted:', signature);
+  const buySignature = await signAndSendTransactionWithKey(txBase64, wallet.privateKey);
+  console.log('✅ Buy tx confirmed:', buySignature);
   
-  // Wait for confirmation
+  await confirmTransaction(buySignature);
+  
+  // Wait for token account to update
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  // STEP 2: Get the token balance in flip wallet and transfer ALL to burn address
+  const tokenBalance = await getTokenBalance(wallet.address, TOKEN_MINT);
+  console.log(`💰 Flip wallet now has ${tokenBalance.toLocaleString()} tokens to burn`);
+  
+  if (tokenBalance <= 0) {
+    console.log('⚠️ No tokens received from buy - returning buy tx');
+    return { signature: buySignature, tokensReceived: 0 };
+  }
+  
+  // STEP 3: Transfer tokens to burn address
+  console.log(`🔥 Transferring ${tokenBalance.toLocaleString()} tokens to burn address...`);
+  const burnSignature = await transferTokensFromFlipWallet(wallet, BURN_ADDRESS, tokenBalance);
+  console.log('🔥 Burn tx confirmed:', burnSignature);
+  
+  return { signature: burnSignature, tokensReceived: tokenBalance };
+}
+
+// Get SPL token balance for a wallet
+async function getTokenBalance(walletAddress: string, mintAddress: string): Promise<number> {
+  try {
+    const response = await fetch(HELIUS_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'token-balance',
+        method: 'getTokenAccountsByOwner',
+        params: [
+          walletAddress,
+          { mint: mintAddress },
+          { encoding: 'jsonParsed' }
+        ]
+      }),
+    });
+    
+    const data = await response.json();
+    if (data.result?.value?.length > 0) {
+      const tokenAccount = data.result.value[0];
+      const balance = tokenAccount.account.data.parsed.info.tokenAmount.uiAmount;
+      return balance || 0;
+    }
+    return 0;
+  } catch (error) {
+    console.error('Error getting token balance:', error);
+    return 0;
+  }
+}
+
+// Transfer SPL tokens from flip wallet to destination
+async function transferTokensFromFlipWallet(wallet: FlipWallet, toAddress: string, amount: number): Promise<string> {
+  const { 
+    Connection, 
+    PublicKey, 
+    Transaction, 
+    Keypair,
+  } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
+  const {
+    getAssociatedTokenAddress,
+    createTransferInstruction,
+    createAssociatedTokenAccountInstruction,
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  } = await import("https://esm.sh/@solana/spl-token@0.3.8");
+  
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
+  
+  const privateKeyBytes = decodeBase58(wallet.privateKey);
+  const keypair = Keypair.fromSecretKey(privateKeyBytes);
+  const fromPubkey = keypair.publicKey;
+  
+  const mintPubkey = new PublicKey(TOKEN_MINT);
+  const toPubkey = new PublicKey(toAddress);
+  
+  // Get source token account (flip wallet's token account)
+  const fromTokenAccount = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
+  
+  // Get destination token account (burn address's token account)
+  const toTokenAccount = await getAssociatedTokenAddress(mintPubkey, toPubkey);
+  
+  const transaction = new Transaction();
+  
+  // Check if destination token account exists, if not create it
+  const toAccountInfo = await connection.getAccountInfo(toTokenAccount);
+  if (!toAccountInfo) {
+    console.log('Creating associated token account for burn address...');
+    transaction.add(
+      createAssociatedTokenAccountInstruction(
+        fromPubkey, // payer
+        toTokenAccount, // new token account
+        toPubkey, // owner of new account
+        mintPubkey, // mint
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
+    );
+  }
+  
+  // Get token decimals (usually 6 for pump tokens)
+  const decimals = 6;
+  const amountInSmallestUnit = Math.floor(amount * Math.pow(10, decimals));
+  
+  // Add transfer instruction
+  transaction.add(
+    createTransferInstruction(
+      fromTokenAccount,
+      toTokenAccount,
+      fromPubkey,
+      amountInSmallestUnit,
+      [],
+      TOKEN_PROGRAM_ID
+    )
+  );
+  
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = fromPubkey;
+  
+  transaction.sign(keypair);
+  
+  const rawTransaction = transaction.serialize();
+  
+  const signature = await connection.sendRawTransaction(rawTransaction, {
+    skipPreflight: false,
+    maxRetries: 3,
+  });
+  
+  console.log('Token transfer sent:', signature);
+  
   await confirmTransaction(signature);
   
-  const estimatedTokens = amountSol * 1000000;
-  return { signature, tokensReceived: estimatedTokens };
+  console.log('Token transfer confirmed:', signature);
+  
+  return signature;
 }
 
 async function sendSolFromFlipWallet(toAddress: string, amountSol: number, wallet: FlipWallet): Promise<{ signature: string }> {
