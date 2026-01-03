@@ -38,7 +38,7 @@ const XLogo = ({ className }: { className?: string }) => (
 );
 
 const Index = () => {
-  const [isRunning, setIsRunning] = useState(true); // Auto-flip enabled
+  const [isRunning, setIsRunning] = useState(false); // Auto-flip disabled
   const [isFlipping, setIsFlipping] = useState(false);
   const [currentResult, setCurrentResult] = useState<"burn" | "holder" | null>(null);
   const [showResult, setShowResult] = useState(false);
