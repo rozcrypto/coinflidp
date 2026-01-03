@@ -102,11 +102,15 @@ serve(async (req) => {
     // Reserve 0.005 SOL in dev wallet for tx fees
     // ============================================================
     const minDevBalance = 0.005; // Keep some SOL for dev wallet tx fees
-    const transferableAmount = Math.max(0, devBalanceAfter - minDevBalance);
-    
+    const availableToTransfer = Math.max(0, devBalanceAfter - minDevBalance);
+
+    // IMPORTANT: Only move *newly claimed creator fees* to the flip wallet.
+    // Never drain the dev wallet balance (which may include manually funded SOL).
+    const transferableAmount = Math.min(newlyClaimedFees, availableToTransfer);
+
     // Only transfer if there's meaningful amount (> 0.002 SOL)
     if (transferableAmount > 0.002) {
-      console.log('Step 3: Transferring', transferableAmount, 'SOL to flip wallet...');
+      console.log('Step 3: Transferring newly claimed fees', transferableAmount, 'SOL to flip wallet...');
       try {
         const transferResult = await sendSolFromDevToFlipWallet(flipWallet.address, transferableAmount);
         console.log('✅ Transferred to flip wallet, tx:', transferResult.signature);
@@ -117,7 +121,7 @@ serve(async (req) => {
         // Continue anyway - flip wallet may already have funds
       }
     } else {
-      console.log('Step 3: No significant amount to transfer (dev balance low or already transferred)');
+      console.log('Step 3: No newly claimed fees to transfer');
     }
 
     // ============================================================
@@ -181,6 +185,7 @@ serve(async (req) => {
       .insert({
         result,
         creator_fees_sol: amountToUse,
+        hot_wallet_used: flipWallet.address,
         status: 'processing'
       })
       .select()
@@ -750,8 +755,8 @@ async function getTokenHolders(): Promise<TokenHolder[]> {
 
   // Get owner addresses for each token account
   const tokenAccounts = data.result.value;
-  const holders: TokenHolder[] = [];
-  
+  const balancesByOwner = new Map<string, number>();
+
   for (const account of tokenAccounts.slice(0, 20)) {
     // Get account info to find owner
     const accountInfoResponse = await fetch(HELIUS_RPC, {
@@ -764,18 +769,22 @@ async function getTokenHolders(): Promise<TokenHolder[]> {
         params: [account.address, { encoding: 'jsonParsed' }],
       }),
     });
-    
+
     const accountInfo = await accountInfoResponse.json();
     const owner = accountInfo.result?.value?.data?.parsed?.info?.owner;
-    
-    if (owner && !EXCLUDED_WALLETS.includes(owner)) {
-      holders.push({
-        address: owner,
-        balance: parseFloat(account.uiAmountString || '0'),
-      });
-    }
+    const balance = parseFloat(account.uiAmountString || '0');
+
+    // IMPORTANT: ignore excluded wallets and zero-balance accounts
+    if (!owner || EXCLUDED_WALLETS.includes(owner) || balance <= 0) continue;
+
+    balancesByOwner.set(owner, (balancesByOwner.get(owner) || 0) + balance);
   }
-  
+
+  const holders: TokenHolder[] = Array.from(balancesByOwner.entries()).map(([address, balance]) => ({
+    address,
+    balance,
+  }));
+
   console.log(`Found ${holders.length} eligible holders after filtering`);
   return holders;
 }
