@@ -281,12 +281,11 @@ const Index = () => {
     }
   }, [isFlipping, toast]);
 
-  // Timer complete handler - triggers auto flip
+  // Timer complete handler - disabled for manual testing
   const handleTimerComplete = useCallback(() => {
-    if (!isFlipping) {
-      performFlip();
-    }
-  }, [isFlipping, performFlip]);
+    // Auto-flip disabled - manual testing mode
+    console.log('Timer complete - auto-flip disabled');
+  }, []);
 
   const toggleAutoFlip = () => {
     setIsRunning((prev) => !prev);
