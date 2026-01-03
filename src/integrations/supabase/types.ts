@@ -14,7 +14,102 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      flip_history: {
+        Row: {
+          amount_tokens: number | null
+          created_at: string
+          creator_fees_sol: number
+          error_message: string | null
+          hot_wallet_used: string | null
+          id: string
+          recipient_wallet: string | null
+          result: string
+          status: string
+          tx_hash: string | null
+        }
+        Insert: {
+          amount_tokens?: number | null
+          created_at?: string
+          creator_fees_sol: number
+          error_message?: string | null
+          hot_wallet_used?: string | null
+          id?: string
+          recipient_wallet?: string | null
+          result: string
+          status?: string
+          tx_hash?: string | null
+        }
+        Update: {
+          amount_tokens?: number | null
+          created_at?: string
+          creator_fees_sol?: number
+          error_message?: string | null
+          hot_wallet_used?: string | null
+          id?: string
+          recipient_wallet?: string | null
+          result?: string
+          status?: string
+          tx_hash?: string | null
+        }
+        Relationships: []
+      }
+      hot_wallets: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          last_used_at: string | null
+          private_key_encrypted: string
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          private_key_encrypted: string
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          private_key_encrypted?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
+      token_config: {
+        Row: {
+          burn_address: string
+          created_at: string
+          flip_interval_seconds: number
+          id: string
+          is_active: boolean
+          mint_address: string
+          updated_at: string
+        }
+        Insert: {
+          burn_address?: string
+          created_at?: string
+          flip_interval_seconds?: number
+          id?: string
+          is_active?: boolean
+          mint_address: string
+          updated_at?: string
+        }
+        Update: {
+          burn_address?: string
+          created_at?: string
+          flip_interval_seconds?: number
+          id?: string
+          is_active?: boolean
+          mint_address?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
