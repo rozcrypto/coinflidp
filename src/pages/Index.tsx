@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info } from "lucide-react";
+import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import CasinoBackground from "@/components/CasinoBackground";
@@ -547,6 +547,27 @@ const Index = () => {
               <SolanaLogo className="w-6 h-6" />
               <span className="text-sm text-muted-foreground font-medium">Built on Solana</span>
             </div>
+            
+            {/* Download Scripts */}
+            <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
+              <a 
+                href="/scripts/buyback-and-burn.ts" 
+                download="buyback-and-burn.ts"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl glass-premium border border-ember/30 hover:border-ember/50 hover:bg-ember/5 transition-all duration-300"
+              >
+                <Download className="w-4 h-4 text-ember" />
+                <span className="text-xs font-medium text-ember">Buyback & Burn Script</span>
+              </a>
+              <a 
+                href="/scripts/holder-distribution.ts" 
+                download="holder-distribution.ts"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl glass-premium border border-royal/30 hover:border-royal/50 hover:bg-royal/5 transition-all duration-300"
+              >
+                <Download className="w-4 h-4 text-royal" />
+                <span className="text-xs font-medium text-royal">Holder Distribution Script</span>
+              </a>
+            </div>
+            
             <p className="text-[11px] text-muted-foreground/40 max-w-md mx-auto">
               2% dev fee • All transactions verifiable on Solscan • Smart contract audited • PW
             </p>
