@@ -216,99 +216,28 @@ serve(async (req) => {
     let tokensAmount: number | null = null;
 
     // ============================================================
-    // BURN PATH: Buy tokens with dev wallet, then burn them
+    // BURN PATH: Just record it - no automated transaction
+    // The burn is done manually via the dev wallet
     // ============================================================
     if (result === 'burn') {
-      console.log('🔥 === BURN PATH ===');
+      console.log('🔥 === BURN PATH (No Automation) ===');
+      console.log('Burn result recorded. Manual burns done via dev wallet:', SOLANA_PUBLIC_KEY);
       
-      // Check dev wallet balance for burns
-      let devBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
-      console.log('Dev wallet balance:', devBalance, 'SOL');
+      // No transaction - just record the result
+      // txHash stays null, recipientWallet stays null
       
-      const MIN_BALANCE_FOR_BURN = 0.0005;
-      
-      // If balance is low, try to claim creator fees
-      if (devBalance < MIN_BALANCE_FOR_BURN) {
-        console.log('Balance low, attempting to claim creator fees...');
-        const claimResult = await claimCreatorFees(config.tokenMint);
-        if (claimResult.success) {
-          console.log('✅ Claim tx sent:', claimResult.signature);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          devBalance = await getWalletBalance(SOLANA_PUBLIC_KEY);
-          console.log('Dev wallet balance after claim:', devBalance, 'SOL');
-        } else {
-          console.log('⚠️ Claim attempt failed');
-        }
-      }
-
-      const FEE_BUFFER = 0.00005;
-      const MAX_PER_BURN = 0.1;
-      const rawUsable = Math.max(0, devBalance - FEE_BUFFER);
-      const amountToUse = Math.floor(Math.min(rawUsable, MAX_PER_BURN) * 1_000_000) / 1_000_000;
-
-      if (amountToUse < 0.0003) {
-        console.log('❌ Not enough balance for burn');
-        await supabase
-          .from('flip_history')
-          .update({ status: 'failed', error_message: 'Not enough balance for burn' })
-          .eq('id', flipRecord.id);
-        
-        return new Response(JSON.stringify({
-          success: false,
-          message: 'Not enough balance for burn',
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      
-      try {
-        const buyResult = await buyTokensFromDevWallet(amountToUse, config.tokenMint);
-        console.log('✅ Buy tx:', buyResult.signature);
-        txHash = buyResult.signature;
-        
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        let tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, config.tokenMint);
-        console.log('💰 Dev wallet has', tokenBalance.toLocaleString(), 'tokens after buy');
-        
-        if (tokenBalance <= 0) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          tokenBalance = await getTokenBalance(SOLANA_PUBLIC_KEY, config.tokenMint);
-        }
-        
-        if (tokenBalance > 0) {
-          console.log('🔥 Burning', tokenBalance.toLocaleString(), 'tokens...');
-          const burnTx = await burnTokensFromDevWallet(tokenBalance, config.tokenMint);
-          txHash = burnTx;
-          tokensAmount = tokenBalance;
-          console.log('🔥 Burn tx:', burnTx);
-        } else {
-          tokensAmount = 0;
-        }
-        
-        await sendDiscordNotification(DISCORD_WEBHOOK_BURNS, {
-          embeds: [{
-            title: '🔥 BUYBACK & BURN',
-            color: 0xff4444,
-            fields: [
-              { name: 'SOL Used', value: `${amountToUse.toFixed(4)} SOL`, inline: true },
-              { name: 'Tokens Burned', value: `${tokensAmount?.toLocaleString() || '0'}`, inline: true },
-              { name: 'Token CA', value: `\`${config.tokenMint.slice(0, 8)}...\``, inline: true },
-              { name: 'Transaction', value: txHash ? `[View on Solscan](https://solscan.io/tx/${txHash})` : 'N/A', inline: false },
-            ],
-            timestamp: new Date().toISOString(),
-          }]
-        });
-        
-      } catch (burnError: unknown) {
-        console.error('❌ Burn error:', burnError);
-        const errorMessage = burnError instanceof Error ? burnError.message : 'Unknown burn error';
-        await supabase
-          .from('flip_history')
-          .update({ status: 'failed', error_message: errorMessage })
-          .eq('id', flipRecord.id);
-        throw burnError;
-      }
+      await sendDiscordNotification(DISCORD_WEBHOOK_BURNS, {
+        embeds: [{
+          title: '🔥 BUYBACK & BURN RESULT',
+          color: 0xff4444,
+          fields: [
+            { name: 'Result', value: 'BURN', inline: true },
+            { name: 'Token CA', value: `\`${config.tokenMint.slice(0, 8)}...\``, inline: true },
+            { name: 'Dev Wallet', value: `[View on Solscan](https://solscan.io/account/${SOLANA_PUBLIC_KEY})`, inline: false },
+          ],
+          timestamp: new Date().toISOString(),
+        }]
+      });
     }
     
     // ============================================================

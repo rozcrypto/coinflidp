@@ -1,10 +1,14 @@
 import { cn } from "@/lib/utils";
-import { Flame, Gift, History, ArrowRight } from "lucide-react";
+import { Flame, Gift, History, ExternalLink } from "lucide-react";
+
+// Dev wallet address for Solscan link on burn results
+const DEV_WALLET_ADDRESS = "Hc9T2axADf6wCFBADfjEqRfNmznWafLQM61E2F3N36bh";
 
 export interface FlipRecord {
   id: number;
   result: "burn" | "holder";
   timestamp: Date;
+  txHash?: string | null;
 }
 
 interface CasinoHistoryProps {
@@ -104,9 +108,32 @@ const CasinoHistory = ({ history }: CasinoHistoryProps) => {
                       </p>
                     </div>
                   </div>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {record.timestamp.toLocaleTimeString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {record.timestamp.toLocaleTimeString()}
+                    </span>
+                    {record.result === "burn" ? (
+                      <a
+                        href={`https://solscan.io/account/${DEV_WALLET_ADDRESS}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-ember hover:text-ember/80 transition-colors"
+                        title="View Dev Wallet on Solscan"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ) : record.txHash ? (
+                      <a
+                        href={`https://solscan.io/tx/${record.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-royal hover:text-royal/80 transition-colors"
+                        title="View Transaction on Solscan"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
