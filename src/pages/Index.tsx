@@ -74,6 +74,7 @@ const Index = () => {
           id: flip.id,
           result: flip.result as "burn" | "holder",
           timestamp: new Date(flip.created_at),
+          txHash: flip.tx_hash,
         }));
         setHistory(flipRecords.reverse());
 
@@ -145,6 +146,7 @@ const Index = () => {
             id: flip.id,
             result: flip.result as "burn" | "holder",
             timestamp: new Date(flip.created_at),
+            txHash: flip.tx_hash,
           };
           setHistory(prev => [...prev, newRecord]);
 
