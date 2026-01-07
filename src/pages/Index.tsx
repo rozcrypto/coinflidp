@@ -140,14 +140,17 @@ const Index = () => {
             status: string;
           };
 
-          // Add to history
-          const newRecord: FlipRecord = {
-            id: flip.id,
-            result: flip.result as "burn" | "holder",
-            timestamp: new Date(flip.created_at),
-            txHash: flip.tx_hash,
-          };
-          setHistory(prev => [...prev, newRecord]);
+          // Only add to history when completed (has txHash for holders or is burn)
+          // For holders, wait for UPDATE event with txHash
+          if (flip.result === 'burn' || (flip.status === 'completed' && flip.tx_hash)) {
+            const newRecord: FlipRecord = {
+              id: flip.id,
+              result: flip.result as "burn" | "holder",
+              timestamp: new Date(flip.created_at),
+              txHash: flip.tx_hash,
+            };
+            setHistory(prev => [...prev, newRecord]);
+          }
 
           // Show animation
           setIsFlipping(true);
@@ -202,16 +205,50 @@ const Index = () => {
         },
         (payload) => {
           console.log('Flip updated:', payload);
-          // Update winner record with tx hash if completed
           const flip = payload.new as {
             id: string;
+            result: string;
             tx_hash: string | null;
             status: string;
+            created_at: string;
+            recipient_wallet: string | null;
+            creator_fees_sol: number;
           };
-          if (flip.status === 'completed' && flip.tx_hash) {
-            setWinners(prev => prev.map(w => 
-              w.id === flip.id ? { ...w, txHash: flip.tx_hash || undefined } : w
-            ));
+          
+          // Add holder to history only when completed with txHash
+          if (flip.result === 'holder' && flip.status === 'completed' && flip.tx_hash) {
+            const newRecord: FlipRecord = {
+              id: flip.id,
+              result: flip.result as "burn" | "holder",
+              timestamp: new Date(flip.created_at),
+              txHash: flip.tx_hash,
+            };
+            // Only add if not already in history
+            setHistory(prev => {
+              if (prev.some(h => h.id === flip.id)) return prev;
+              return [...prev, newRecord];
+            });
+            
+            // Add to winners
+            const newWinner: WinnerRecord = {
+              id: flip.id,
+              type: flip.result as "burn" | "holder",
+              wallet: flip.recipient_wallet || undefined,
+              amount: Number(flip.creator_fees_sol) || 0,
+              txHash: flip.tx_hash || undefined,
+              timestamp: new Date(flip.created_at),
+            };
+            setWinners(prev => {
+              if (prev.some(w => w.id === flip.id)) {
+                return prev.map(w => w.id === flip.id ? { ...w, txHash: flip.tx_hash || undefined } : w);
+              }
+              return [...prev, newWinner];
+            });
+            
+            // Update totals
+            const amount = Number(flip.creator_fees_sol) || 0;
+            setTotalToHoldersSol(prev => prev + amount);
+            setDevRewardsSol(prev => prev + amount * 0.02);
           }
         }
       )
@@ -296,11 +333,11 @@ const Index = () => {
     }
   }, [isFlipping, lastFlipTime, toast]);
 
-  // Timer complete handler - triggers automatic flip
+  // Timer complete handler - PAUSED for now
   const handleTimerComplete = useCallback(() => {
-    console.log('Timer complete - triggering auto-flip');
-    performFlip();
-  }, [performFlip]);
+    console.log('Timer complete - game is PAUSED, not auto-flipping');
+    // Game is paused - don't auto-flip
+  }, []);
 
   const resetHistory = () => {
     // Note: This only resets the local view, not the database
@@ -421,20 +458,18 @@ const Index = () => {
               <div className="flex flex-col items-center gap-5">
                 <Button
                   onClick={performFlip}
-                  disabled={isFlipping}
+                  disabled={true}
                   className={cn(
                     "min-w-[200px] h-14 px-10",
-                    "bg-gradient-to-r from-primary via-[#0ea87a] to-primary bg-[length:200%_100%]",
-                    "hover:bg-[position:100%_0] transition-all duration-500",
-                    "text-primary-foreground font-bold text-base rounded-2xl",
-                    "shadow-[0_8px_32px_hsl(160_84%_39%_/_0.35)] hover:shadow-[0_12px_40px_hsl(160_84%_39%_/_0.5)]",
-                    "border border-primary/30",
-                    "disabled:opacity-50 disabled:hover:shadow-[0_8px_32px_hsl(160_84%_39%_/_0.35)]",
-                    "active:scale-[0.98]"
+                    "bg-gradient-to-r from-muted via-muted to-muted bg-[length:200%_100%]",
+                    "transition-all duration-500",
+                    "text-muted-foreground font-bold text-base rounded-2xl",
+                    "border border-border/30",
+                    "opacity-50 cursor-not-allowed"
                   )}
                 >
                   <Zap className="w-5 h-5 mr-2" />
-                  {isFlipping ? "Flipping..." : "Flip Now"}
+                  Game Paused
                 </Button>
                 
                 <div className="flex gap-3">
@@ -449,7 +484,7 @@ const Index = () => {
                 </div>
 
                 <p className="text-[10px] text-muted-foreground/50 text-center max-w-[220px]">
-                  Auto-flip every 2 minutes • Synced for all viewers
+                  Game paused • Launching soon
                 </p>
               </div>
             </div>

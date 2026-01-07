@@ -121,7 +121,7 @@ const LiveFeed = ({ history }: LiveFeedProps) => {
                       "text-[11px] font-semibold block",
                       record.result === "burn" ? "text-ember" : "text-royal"
                     )}>
-                      {record.result === "burn" ? "Buyback & Burn" : "Holder Reward"}
+                      {record.result === "burn" ? "Buyback & Burn (TBD)" : "Holder Reward"}
                     </span>
                     <span className="text-[9px] text-muted-foreground">
                       #{history.length - i}
