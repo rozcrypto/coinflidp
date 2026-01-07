@@ -57,11 +57,20 @@ serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
+    console.log('=== Coin Flip - GAME PAUSED ===');
+    
+    // GAME IS PAUSED - No transactions
+    return new Response(JSON.stringify({ 
+      success: false, 
+      message: 'Game is paused. Launching soon!'
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+    /* PAUSED - Original code below
     console.log('=== Starting Coin Flip Round ===');
     console.log('Dev wallet:', SOLANA_PUBLIC_KEY);
-    
-    const rewardsWalletPublicKey = await getRewardsWalletPublicKey();
-    console.log('Rewards wallet:', rewardsWalletPublicKey);
 
     // ============================================================
     // STEP 0: Load token config from database (CA, burn address)
@@ -367,6 +376,7 @@ serve(async (req) => {
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+    END PAUSED */
 
   } catch (error: unknown) {
     console.error('❌ Coin flip error:', error);
