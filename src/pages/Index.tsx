@@ -386,7 +386,7 @@ const Index = () => {
             <div className="flex items-center gap-3">
               {/* Buy $COINFLIP on PumpFun */}
               <a 
-                href="https://pump.fun" 
+                href="https://pump.fun/coin/CRsUm9xcHYDDex5R2K1CHzKbzopAqeuyNm4s8xVnpump"
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#3fc99d]/15 border border-[#3fc99d]/40 hover:bg-[#3fc99d]/25 hover:border-[#3fc99d]/60 transition-all duration-300"
