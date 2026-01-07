@@ -431,7 +431,6 @@ const Index = () => {
             <RewardsPanel 
               totalBurnedSol={totalBurnedSol}
               totalToHoldersSol={totalToHoldersSol}
-              devRewardsSol={devRewardsSol}
               totalFlips={history.length}
             />
           </section>

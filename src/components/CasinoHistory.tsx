@@ -101,7 +101,7 @@ const CasinoHistory = ({ history }: CasinoHistoryProps) => {
                         "font-medium text-sm",
                         record.result === "burn" ? "text-ember" : "text-royal"
                       )}>
-                        {record.result === "burn" ? "Buyback & Burn (TBD)" : "Random Holder"}
+                        {record.result === "burn" ? "Buyback & Burn (TBD)" : "Random Holder (TBD)"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Flip #{history.length - history.indexOf(record)}
