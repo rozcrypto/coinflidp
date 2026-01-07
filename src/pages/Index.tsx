@@ -499,7 +499,7 @@ const Index = () => {
 
           {/* Leaderboard & Burn Stats */}
           <section className="mb-10">
-            <Leaderboard entries={leaderboardEntries} totalBurnedSol={totalBurnedSol} />
+            <Leaderboard entries={leaderboardEntries} />
           </section>
 
           {/* Winners Panel */}
