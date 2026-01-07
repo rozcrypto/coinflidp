@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { Play, Pause, RotateCcw, Zap, Flame, Gift, Info, Download } from "lucide-react";
+import { Zap, Flame, Gift, Info, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import CasinoBackground from "@/components/CasinoBackground";
@@ -38,7 +38,6 @@ const XLogo = ({ className }: { className?: string }) => (
 );
 
 const Index = () => {
-  const [isRunning, setIsRunning] = useState(false); // Auto-flip disabled
   const [isFlipping, setIsFlipping] = useState(false);
   const [currentResult, setCurrentResult] = useState<"burn" | "holder" | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -303,14 +302,6 @@ const Index = () => {
     performFlip();
   }, [performFlip]);
 
-  const toggleAutoFlip = () => {
-    setIsRunning((prev) => !prev);
-    toast({
-      title: isRunning ? "Auto-flip paused" : "Auto-flip resumed",
-      description: isRunning ? "Click play to resume" : "Next flip in 2 minutes",
-    });
-  };
-
   const resetHistory = () => {
     // Note: This only resets the local view, not the database
     setHistory([]);
@@ -416,7 +407,8 @@ const Index = () => {
                 <CasinoTimer
                   seconds={FLIP_INTERVAL}
                   onComplete={handleTimerComplete}
-                  isRunning={isRunning && !isFlipping}
+                  isRunning={!isFlipping}
+                  lastFlipTime={lastFlipTime}
                 />
               </div>
             </div>
@@ -449,18 +441,6 @@ const Index = () => {
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={toggleAutoFlip}
-                    className={cn(
-                      "w-14 h-14 rounded-2xl glass-premium border-border/40",
-                      "hover:border-primary/40 hover:bg-primary/5 transition-all duration-300",
-                      isRunning && "border-primary/40 bg-primary/10 shadow-[0_0_20px_hsl(160_84%_39%_/_0.15)]"
-                    )}
-                  >
-                    {isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
                     onClick={resetHistory}
                     className="w-14 h-14 rounded-2xl glass-premium border-border/40 hover:border-destructive/40 hover:bg-destructive/5 transition-all duration-300"
                   >
@@ -469,7 +449,7 @@ const Index = () => {
                 </div>
 
                 <p className="text-[10px] text-muted-foreground/50 text-center max-w-[220px]">
-                  Auto-flip every 2 minutes • Verifiable on-chain
+                  Auto-flip every 2 minutes • Synced for all viewers
                 </p>
               </div>
             </div>

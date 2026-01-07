@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Clock, Zap } from "lucide-react";
 
@@ -6,42 +6,46 @@ interface CasinoTimerProps {
   seconds: number;
   onComplete: () => void;
   isRunning: boolean;
+  lastFlipTime: Date | null;
 }
 
-const CasinoTimer = ({ seconds, onComplete, isRunning }: CasinoTimerProps) => {
+const CasinoTimer = ({ seconds, onComplete, isRunning, lastFlipTime }: CasinoTimerProps) => {
   const [timeLeft, setTimeLeft] = useState(seconds);
-  const [wasRunning, setWasRunning] = useState(isRunning);
 
-  // Reset timer when transitioning from not running to running (after flip completes)
+  // Calculate time left based on lastFlipTime - this syncs all clients
+  const calculateTimeLeft = useCallback(() => {
+    if (!lastFlipTime) return seconds;
+    
+    const now = Date.now();
+    const lastFlipMs = lastFlipTime.getTime();
+    const elapsedMs = now - lastFlipMs;
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+    const remaining = Math.max(0, seconds - elapsedSeconds);
+    
+    return remaining;
+  }, [lastFlipTime, seconds]);
+
+  // Update timer based on lastFlipTime whenever it changes
   useEffect(() => {
-    if (isRunning && !wasRunning) {
-      setTimeLeft(seconds);
-    }
-    setWasRunning(isRunning);
-  }, [isRunning, wasRunning, seconds]);
+    setTimeLeft(calculateTimeLeft());
+  }, [calculateTimeLeft]);
 
+  // Countdown effect - ticks every second
   useEffect(() => {
     if (!isRunning) return;
 
     const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          return 0;
-        }
-        return prev - 1;
-      });
+      const remaining = calculateTimeLeft();
+      setTimeLeft(remaining);
+      
+      // When timer reaches 0, trigger completion
+      if (remaining <= 0) {
+        onComplete();
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning]);
-
-  // Handle completion separately to avoid setState during render
-  useEffect(() => {
-    if (timeLeft === 0 && isRunning) {
-      onComplete();
-      setTimeLeft(seconds);
-    }
-  }, [timeLeft, isRunning, onComplete, seconds]);
+  }, [isRunning, calculateTimeLeft, onComplete]);
 
   const minutes = Math.floor(timeLeft / 60);
   const secs = timeLeft % 60;
@@ -82,19 +86,10 @@ const CasinoTimer = ({ seconds, onComplete, isRunning }: CasinoTimerProps) => {
               Next Flip
             </span>
           </div>
-          <div className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded-full transition-all",
-            isRunning ? "bg-primary/10 border border-primary/20" : "bg-muted/30 border border-border"
-          )}>
-            <div className={cn(
-              "w-1.5 h-1.5 rounded-full transition-all",
-              isRunning ? "bg-primary animate-live" : "bg-muted-foreground"
-            )} />
-            <span className={cn(
-              "text-[8px] font-bold uppercase tracking-wider",
-              isRunning ? "text-primary" : "text-muted-foreground"
-            )}>
-              {isRunning ? "AUTO" : "PAUSED"}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-live" />
+            <span className="text-[8px] font-bold uppercase tracking-wider text-primary">
+              LIVE
             </span>
           </div>
         </div>
@@ -170,7 +165,7 @@ const CasinoTimer = ({ seconds, onComplete, isRunning }: CasinoTimerProps) => {
             "text-[10px] font-semibold",
             isCritical ? "text-primary" : "text-muted-foreground"
           )}>
-            {isCritical ? "Flipping soon!" : isRunning ? "Auto-flip active" : "Paused"}
+            {isCritical ? "Flipping soon!" : "Synced across all viewers"}
           </span>
         </div>
       </div>
