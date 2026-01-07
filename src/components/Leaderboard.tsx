@@ -1,4 +1,4 @@
-import { Trophy, Flame, Medal, Crown, TrendingUp } from "lucide-react";
+import { Trophy, Medal, Crown, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface LeaderboardEntry {
@@ -11,10 +11,9 @@ export interface LeaderboardEntry {
 
 interface LeaderboardProps {
   entries: LeaderboardEntry[];
-  totalBurnedSol: number;
 }
 
-const Leaderboard = ({ entries, totalBurnedSol }: LeaderboardProps) => {
+const Leaderboard = ({ entries }: LeaderboardProps) => {
   const formatWallet = (wallet: string) => {
     return `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
   };
@@ -54,7 +53,7 @@ const Leaderboard = ({ entries, totalBurnedSol }: LeaderboardProps) => {
   const topHolders = entries.slice(0, 10);
 
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
+    <div className="w-full">
       {/* Top Winners */}
       <div className="rounded-2xl overflow-hidden glass-premium">
         <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
@@ -114,57 +113,6 @@ const Leaderboard = ({ entries, totalBurnedSol }: LeaderboardProps) => {
               </div>
             ))
           )}
-        </div>
-      </div>
-
-      {/* Burn Stats */}
-      <div className="rounded-2xl overflow-hidden glass-premium">
-        <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-ember/20 to-flame/10 flex items-center justify-center border border-ember/20">
-              <Flame className="w-4 h-4 text-ember" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm">Burn Statistics</h3>
-              <p className="text-[10px] text-muted-foreground">Deflationary metrics</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5">
-          {/* Big burn counter */}
-          <div className="text-center mb-6 py-6 rounded-xl bg-gradient-to-br from-ember/10 via-ember/5 to-transparent border border-ember/20">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Flame className="w-6 h-6 text-ember animate-pulse" />
-              <span className="text-[10px] font-semibold text-ember uppercase tracking-wider">Total Burned</span>
-            </div>
-            <span className="font-mono text-4xl md:text-5xl font-black text-gradient-ember">
-              {totalBurnedSol.toFixed(4)}
-            </span>
-            <p className="text-[10px] text-muted-foreground mt-2">SOL burned forever</p>
-          </div>
-
-          {/* Stats grid */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 rounded-xl bg-muted/20 border border-border/50 text-center">
-              <span className="text-2xl font-bold text-foreground block">{entries.length > 0 ? Math.round(entries.reduce((acc, e) => acc + e.totalWins, 0) / 2) : 0}</span>
-              <span className="text-[10px] text-muted-foreground">Burn Events</span>
-            </div>
-            <div className="p-4 rounded-xl bg-muted/20 border border-border/50 text-center">
-              <span className="text-2xl font-bold text-foreground block">
-                {entries.length > 0 ? (totalBurnedSol / Math.max(1, Math.round(entries.reduce((acc, e) => acc + e.totalWins, 0) / 2))).toFixed(4) : '0'}
-              </span>
-              <span className="text-[10px] text-muted-foreground">Avg SOL/Burn</span>
-            </div>
-            <div className="p-4 rounded-xl bg-muted/20 border border-border/50 text-center">
-              <span className="text-2xl font-bold text-primary block">50%</span>
-              <span className="text-[10px] text-muted-foreground">Burn Rate</span>
-            </div>
-            <div className="p-4 rounded-xl bg-muted/20 border border-border/50 text-center">
-              <span className="text-2xl font-bold text-foreground block">∞</span>
-              <span className="text-[10px] text-muted-foreground">Deflation</span>
-            </div>
-          </div>
         </div>
       </div>
     </div>
