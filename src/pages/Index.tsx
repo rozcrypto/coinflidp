@@ -17,14 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const FLIP_INTERVAL = 120;
 
-// USDC Logo Component
-const USDCLogo = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 32 32" className={className} fill="none">
-    <circle cx="16" cy="16" r="16" fill="#2775CA"/>
-    <path d="M20.5 18.2c0-2.1-1.3-2.8-3.8-3.1-1.8-.3-2.2-.7-2.2-1.5s.7-1.3 1.8-1.3c1 0 1.6.4 1.9 1.2.1.2.2.3.4.3h.9c.3 0 .4-.2.4-.4-.3-1.2-1.1-2.1-2.4-2.4v-1.4c0-.2-.2-.4-.5-.4h-.8c-.2 0-.4.2-.5.4v1.3c-1.6.3-2.6 1.3-2.6 2.7 0 2 1.2 2.7 3.8 3.1 1.6.3 2.2.8 2.2 1.6s-.9 1.4-2 1.4c-1.5 0-2-.7-2.2-1.4-.1-.2-.2-.3-.4-.3h-1c-.2 0-.4.2-.4.4.3 1.4 1.2 2.3 2.8 2.6v1.4c0 .2.2.4.5.4h.8c.2 0 .4-.2.5-.4v-1.4c1.6-.3 2.7-1.4 2.7-2.9z" fill="white"/>
-    <path d="M12.8 25.2c-4.2-1.5-6.4-6.2-4.8-10.4 1-2.5 3-4.2 5.5-4.8.2-.1.4-.2.4-.5v-.8c0-.2-.2-.4-.4-.4-.1 0-.1 0-.2.1-5 1.5-7.9 6.8-6.4 11.9 1 3.1 3.3 5.4 6.4 6.4.2.1.5-.1.5-.3v-.8c0-.3-.2-.4-.5-.5zm6.4-16.4c-.2-.1-.5.1-.5.3v.8c0 .2.2.5.5.5 4.2 1.5 6.4 6.2 4.8 10.4-1 2.5-3 4.2-5.5 4.8-.2.1-.4.2-.4.5v.8c0 .2.2.4.4.4.1 0 .1 0 .2-.1 5-1.5 7.9-6.8 6.4-11.9-1-3.1-3.3-5.4-6.4-6.4z" fill="white"/>
-  </svg>
-);
+import usdcPoweredLogo from "@/assets/usdc-powered-logo.png";
 
 // X (Twitter) Logo Component
 const XLogo = ({ className }: { className?: string }) => (
@@ -353,7 +346,7 @@ const Index = () => {
                   USDC FLIP
                 </h1>
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  Powered by <USDCLogo className="w-3.5 h-3.5" /> <span className="text-gradient-usdc font-medium">USDC</span>
+                  Powered by <img src={usdcPoweredLogo} alt="USDC" className="w-3.5 h-3.5 inline-block" /> <span className="text-gradient-usdc font-medium">USDC</span>
                 </p>
               </div>
             </div>
@@ -524,7 +517,7 @@ const Index = () => {
           {/* Footer */}
           <footer className="text-center mt-14 pb-10">
             <div className="flex items-center justify-center gap-3 mb-4">
-              <USDCLogo className="w-6 h-6" />
+              <img src={usdcPoweredLogo} alt="USDC" className="w-6 h-6" />
               <span className="text-sm text-muted-foreground font-medium">Powered by USDC</span>
             </div>
             
