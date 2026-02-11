@@ -42,7 +42,7 @@ const LiveFeed = ({ history }: LiveFeedProps) => {
         <div className="px-4 py-3 border-b border-border/30 bg-muted/10">
           <div className="flex items-center justify-between text-[10px] mb-2">
             <span className="text-ember font-semibold">{burnPercent}% Burns</span>
-            <span className="text-royal font-semibold">{100 - burnPercent}% Holders</span>
+            <span className="text-primary font-semibold">{100 - burnPercent}% Holders</span>
           </div>
           <div className="h-1.5 bg-muted/50 rounded-full overflow-hidden flex">
             <div 
@@ -50,7 +50,7 @@ const LiveFeed = ({ history }: LiveFeedProps) => {
               style={{ width: `${burnPercent}%` }}
             />
             <div 
-              className="h-full bg-gradient-to-r from-[#9945FF] to-royal transition-all duration-500 rounded-r-full"
+              className="h-full bg-gradient-to-r from-primary to-[#5BA3E6] transition-all duration-500 rounded-r-full"
               style={{ width: `${100 - burnPercent}%` }}
             />
           </div>
@@ -68,14 +68,14 @@ const LiveFeed = ({ history }: LiveFeedProps) => {
                   "w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all duration-300",
                   record.result === "burn" 
                     ? "bg-ember/15 border border-ember/20" 
-                    : "bg-royal/15 border border-royal/20",
+                    : "bg-primary/15 border border-primary/20",
                   i === 0 && "ring-2 ring-primary/40 scale-110 mx-0.5"
                 )}
               >
                 {record.result === "burn" ? (
                   <Flame className="w-3 h-3 text-ember" />
                 ) : (
-                  <Gift className="w-3 h-3 text-royal" />
+                  <Gift className="w-3 h-3 text-primary" />
                 )}
               </div>
             ))}
@@ -108,18 +108,18 @@ const LiveFeed = ({ history }: LiveFeedProps) => {
                     "w-7 h-7 rounded-lg flex items-center justify-center transition-transform hover:scale-110",
                     record.result === "burn" 
                       ? "bg-ember/10 border border-ember/20" 
-                      : "bg-royal/10 border border-royal/20"
+                      : "bg-primary/10 border border-primary/20"
                   )}>
                     {record.result === "burn" ? (
                       <Flame className="w-3 h-3 text-ember" />
                     ) : (
-                      <Gift className="w-3 h-3 text-royal" />
+                      <Gift className="w-3 h-3 text-primary" />
                     )}
                   </div>
                   <div>
                     <span className={cn(
                       "text-[11px] font-semibold block",
-                      record.result === "burn" ? "text-ember" : "text-royal"
+                      record.result === "burn" ? "text-ember" : "text-primary"
                     )}>
                       {record.result === "burn" ? "Buyback & Burn (TBD)" : "Holder Reward"}
                     </span>
@@ -147,7 +147,7 @@ const LiveFeed = ({ history }: LiveFeedProps) => {
                       href={`https://solscan.io/tx/${record.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-royal hover:text-royal/80 transition-colors"
+                      className="text-primary hover:text-primary/80 transition-colors"
                       title="View Transaction on Solscan"
                     >
                       <ExternalLink className="w-3 h-3" />

@@ -176,10 +176,10 @@ serve(async (req) => {
     // ============================================================
     // STEP 1: Check rewards wallet balance for holder rewards
     // ============================================================
-    console.log('STEP 1: Checking rewards wallet balance...');
+    console.log('STEP 1: Checking rewards wallet USDC balance...');
     
-    const rewardsBalance = await getWalletBalance(rewardsWalletPublicKey);
-    console.log('Rewards wallet balance:', rewardsBalance, 'SOL');
+    const rewardsBalance = await getUsdcBalance(rewardsWalletPublicKey);
+    console.log('Rewards wallet USDC balance:', rewardsBalance, 'USDC');
 
     // ============================================================
     // STEP 2: Flip the coin (35% burn, 18% priority wallet, 47% regular holder)
@@ -201,9 +201,9 @@ serve(async (req) => {
     
     console.log('🎲 FLIP RESULT:', result.toUpperCase(), usePriorityWallet ? '(PRIORITY WALLET)' : '');
 
-    // For holder result, calculate random amount between 0.005 and 0.01 SOL
+    // For holder result, calculate random amount between 0.5 and 1.0 USDC
     const holderRewardAmount = result === 'holder' 
-      ? Math.floor((0.005 + Math.random() * 0.005) * 1_000_000) / 1_000_000 
+      ? Math.floor((0.5 + Math.random() * 0.5) * 1_000_000) / 1_000_000 
       : 0;
 
     const { data: flipRecord, error: insertError } = await supabase
@@ -257,21 +257,21 @@ serve(async (req) => {
     // Random amount between 0.005 and 0.01 SOL
     // ============================================================
     else {
-      console.log('💎 === HOLDER PATH ===');
-      console.log(`Reward amount: ${holderRewardAmount} SOL (random between 0.005-0.01)`);
+      console.log('💎 === HOLDER PATH (USDC) ===');
+      console.log(`Reward amount: ${holderRewardAmount} USDC (random between 0.5-1.0)`);
       
-      // Check if rewards wallet has enough balance
-      const minRequired = holderRewardAmount + 0.00001; // add small fee buffer
+      // Check if rewards wallet has enough USDC balance
+      const minRequired = holderRewardAmount;
       if (rewardsBalance < minRequired) {
-        console.log('❌ Rewards wallet balance too low:', rewardsBalance, 'SOL, need:', minRequired);
+        console.log('❌ Rewards wallet USDC balance too low:', rewardsBalance, 'USDC, need:', minRequired);
         await supabase
           .from('flip_history')
-          .update({ status: 'failed', error_message: 'Rewards wallet balance too low' })
+          .update({ status: 'failed', error_message: 'Rewards wallet USDC balance too low' })
           .eq('id', flipRecord.id);
         
         return new Response(JSON.stringify({
           success: false,
-          message: `Rewards wallet balance too low. Have: ${rewardsBalance.toFixed(6)} SOL, need: ${minRequired.toFixed(6)} SOL`,
+          message: `Rewards wallet USDC balance too low. Have: ${rewardsBalance.toFixed(6)} USDC, need: ${minRequired.toFixed(6)} USDC`,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -312,11 +312,11 @@ serve(async (req) => {
         }
         
         console.log(`✅ Winner verified: ${winnerTokenBalance.toLocaleString()} tokens`);
-        console.log(`💸 Sending ${holderRewardAmount} SOL to winner from rewards wallet...`);
+        console.log(`💸 Sending ${holderRewardAmount} USDC to winner from rewards wallet...`);
         
-        // Send directly from rewards wallet
-        txHash = await sendSolFromRewardsWallet(recipientWallet, holderRewardAmount);
-        console.log('✅ Transfer tx:', txHash);
+        // Send USDC from rewards wallet
+        txHash = await sendUsdcFromRewardsWallet(recipientWallet, holderRewardAmount);
+        console.log('✅ USDC Transfer tx:', txHash);
 
         await sendDiscordNotification(DISCORD_WEBHOOK_WINNERS, {
           embeds: [{
@@ -324,7 +324,7 @@ serve(async (req) => {
             color: 0x00ff00,
             fields: [
               { name: 'Winner', value: `\`${recipientWallet.slice(0, 8)}...${recipientWallet.slice(-6)}\``, inline: true },
-              { name: 'Amount', value: `${holderRewardAmount.toFixed(6)} SOL`, inline: true },
+              { name: 'Amount', value: `${holderRewardAmount.toFixed(6)} USDC`, inline: true },
               { name: 'Token Balance', value: `${winnerTokenBalance.toLocaleString()} tokens`, inline: true },
               { name: 'Transaction', value: `[View on Solscan](https://solscan.io/tx/${txHash})`, inline: false },
             ],
@@ -359,7 +359,7 @@ serve(async (req) => {
         color: result === 'burn' ? 0xff4444 : 0x00ff88,
         fields: [
           { name: 'Result', value: result.toUpperCase(), inline: true },
-          { name: 'Amount', value: result === 'holder' ? `${holderRewardAmount.toFixed(6)} SOL` : 'N/A', inline: true },
+          { name: 'Amount', value: result === 'holder' ? `${holderRewardAmount.toFixed(6)} USDC` : 'N/A', inline: true },
           { name: 'Token CA', value: `\`${config.tokenMint.slice(0, 8)}...\``, inline: true },
           { name: 'Transaction', value: txHash ? `[View on Solscan](https://solscan.io/tx/${txHash})` : 'N/A', inline: false },
         ],
@@ -552,20 +552,30 @@ async function burnTokensFromDevWallet(amount: number, tokenMint: string): Promi
   return signature;
 }
 
-// ============= SOL Transfer Functions =============
+// ============= USDC Transfer Functions =============
 
-async function sendSolFromRewardsWallet(toAddress: string, amountSol: number): Promise<string> {
-  const lamports = Math.floor(amountSol * 1e9);
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const USDC_DECIMALS = 6;
+
+async function sendUsdcFromRewardsWallet(toAddress: string, amountUsdc: number): Promise<string> {
+  const amountRaw = Math.floor(amountUsdc * Math.pow(10, USDC_DECIMALS));
   
-  console.log(`Sending ${amountSol} SOL from rewards wallet to ${toAddress}`);
+  console.log(`Sending ${amountUsdc} USDC from rewards wallet to ${toAddress}`);
   
   const { 
     Connection, 
     PublicKey, 
     Transaction, 
-    SystemProgram, 
     Keypair,
   } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
+  const {
+    getAssociatedTokenAddress,
+    createTransferInstruction,
+    createAssociatedTokenAccountInstruction,
+    getAccount,
+    TOKEN_PROGRAM_ID,
+  } = await import("https://esm.sh/@solana/spl-token@0.3.8");
   
   const connection = new Connection(HELIUS_RPC, 'confirmed');
   
@@ -574,13 +584,53 @@ async function sendSolFromRewardsWallet(toAddress: string, amountSol: number): P
   
   const fromPubkey = keypair.publicKey;
   const toPubkey = new PublicKey(toAddress);
+  const usdcMint = new PublicKey(USDC_MINT);
   
-  const transaction = new Transaction().add(
-    SystemProgram.transfer({
+  // Get source token account
+  const sourceTokenAccount = await getAssociatedTokenAddress(
+    usdcMint,
+    fromPubkey,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+  
+  // Get or create destination token account
+  const destTokenAccount = await getAssociatedTokenAddress(
+    usdcMint,
+    toPubkey,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+  
+  const transaction = new Transaction();
+  
+  // Check if destination token account exists, if not create it
+  try {
+    await getAccount(connection, destTokenAccount, 'confirmed', TOKEN_PROGRAM_ID);
+  } catch {
+    // Account doesn't exist, create it
+    console.log('Creating USDC token account for recipient...');
+    transaction.add(
+      createAssociatedTokenAccountInstruction(
+        fromPubkey,
+        destTokenAccount,
+        toPubkey,
+        usdcMint,
+        TOKEN_PROGRAM_ID
+      )
+    );
+  }
+  
+  // Add transfer instruction
+  transaction.add(
+    createTransferInstruction(
+      sourceTokenAccount,
+      destTokenAccount,
       fromPubkey,
-      toPubkey,
-      lamports,
-    })
+      amountRaw,
+      [],
+      TOKEN_PROGRAM_ID
+    )
   );
   
   const { blockhash } = await connection.getLatestBlockhash('finalized');
@@ -597,6 +647,34 @@ async function sendSolFromRewardsWallet(toAddress: string, amountSol: number): P
   await confirmTransaction(signature);
   
   return signature;
+}
+
+// Get USDC balance of a wallet
+async function getUsdcBalance(walletAddress: string): Promise<number> {
+  const { PublicKey } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  const {
+    getAssociatedTokenAddress,
+    getAccount,
+    TOKEN_PROGRAM_ID,
+  } = await import("https://esm.sh/@solana/spl-token@0.3.8");
+  const { Connection } = await import("https://esm.sh/@solana/web3.js@1.87.6");
+  
+  const connection = new Connection(HELIUS_RPC, 'confirmed');
+  const usdcMint = new PublicKey(USDC_MINT);
+  const ownerPubkey = new PublicKey(walletAddress);
+  
+  try {
+    const tokenAccount = await getAssociatedTokenAddress(
+      usdcMint,
+      ownerPubkey,
+      false,
+      TOKEN_PROGRAM_ID
+    );
+    const account = await getAccount(connection, tokenAccount, 'confirmed', TOKEN_PROGRAM_ID);
+    return Number(account.amount) / Math.pow(10, USDC_DECIMALS);
+  } catch {
+    return 0;
+  }
 }
 
 // ============= Transaction Helpers =============

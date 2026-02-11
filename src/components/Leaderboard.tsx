@@ -18,12 +18,6 @@ const Leaderboard = ({ entries }: LeaderboardProps) => {
     return `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
   };
 
-  const formatAmount = (amount: number) => {
-    if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
-    if (amount >= 1000) return `${(amount / 1000).toFixed(1)}K`;
-    return amount.toLocaleString();
-  };
-
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
@@ -66,9 +60,9 @@ const Leaderboard = ({ entries }: LeaderboardProps) => {
               <p className="text-[10px] text-muted-foreground">All-time leaderboard</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-royal/10 border border-royal/20">
-            <TrendingUp className="w-3 h-3 text-royal" />
-            <span className="text-[10px] font-bold text-royal">{entries.length}</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20">
+            <TrendingUp className="w-3 h-3 text-primary" />
+            <span className="text-[10px] font-bold text-primary">{entries.length}</span>
           </div>
         </div>
 
@@ -105,10 +99,10 @@ const Leaderboard = ({ entries }: LeaderboardProps) => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="font-mono text-sm font-bold text-royal block">
+                  <span className="font-mono text-sm font-bold text-primary block">
                     {entry.totalAmount.toFixed(4)}
                   </span>
-                  <span className="text-[9px] text-muted-foreground">SOL won</span>
+                  <span className="text-[9px] text-muted-foreground">USDC won</span>
                 </div>
               </div>
             ))
