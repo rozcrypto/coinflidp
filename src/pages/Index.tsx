@@ -11,7 +11,7 @@ import WinnersPanel, { WinnerRecord } from "@/components/WinnersPanel";
 import LiveFeed, { FlipRecord } from "@/components/LiveFeed";
 import Leaderboard, { LeaderboardEntry } from "@/components/Leaderboard";
 import { cn } from "@/lib/utils";
-import coinLogo from "@/assets/coin-logo.png";
+import usdcCoinLogo from "@/assets/usdc-coin-logo.png";
 import pumpfunLogo from "@/assets/pumpfun-logo.png";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -345,7 +345,7 @@ const Index = () => {
           <div className="w-full px-4 lg:px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <USDCLogo className="w-11 h-11 drop-shadow-lg" />
+                <img src={usdcCoinLogo} alt="USDC Flip" className="w-11 h-11 drop-shadow-lg object-contain" />
                 <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary border-2 border-background animate-pulse" />
               </div>
               <div>
