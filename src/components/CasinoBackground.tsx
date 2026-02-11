@@ -11,11 +11,11 @@ const CasinoBackground = () => {
         }}
       />
 
-      {/* Top ambient glow */}
+      {/* Top ambient glow - USDC blue */}
       <div 
         className="absolute inset-0"
         style={{
-          background: `radial-gradient(ellipse 100% 50% at 50% -10%, hsl(160 84% 39% / 0.06) 0%, transparent 60%)`
+          background: `radial-gradient(ellipse 100% 50% at 50% -10%, hsl(209 66% 47% / 0.06) 0%, transparent 60%)`
         }}
       />
 
@@ -24,9 +24,9 @@ const CasinoBackground = () => {
         className="absolute inset-0"
         style={{
           background: `
-            radial-gradient(ellipse 60% 50% at 0% 0%, hsl(160 84% 39% / 0.03) 0%, transparent 50%),
-            radial-gradient(ellipse 60% 50% at 100% 0%, hsl(265 70% 58% / 0.03) 0%, transparent 50%),
-            radial-gradient(ellipse 70% 40% at 100% 100%, hsl(265 70% 58% / 0.04) 0%, transparent 50%),
+            radial-gradient(ellipse 60% 50% at 0% 0%, hsl(209 66% 47% / 0.04) 0%, transparent 50%),
+            radial-gradient(ellipse 60% 50% at 100% 0%, hsl(209 80% 55% / 0.04) 0%, transparent 50%),
+            radial-gradient(ellipse 70% 40% at 100% 100%, hsl(209 80% 55% / 0.04) 0%, transparent 50%),
             radial-gradient(ellipse 70% 40% at 0% 100%, hsl(14 100% 57% / 0.03) 0%, transparent 50%)
           `
         }}
@@ -36,7 +36,7 @@ const CasinoBackground = () => {
       <div 
         className="absolute inset-0"
         style={{
-          background: `radial-gradient(ellipse 80% 60% at 50% 40%, hsl(45 100% 50% / 0.015) 0%, transparent 60%)`
+          background: `radial-gradient(ellipse 80% 60% at 50% 40%, hsl(209 66% 47% / 0.02) 0%, transparent 60%)`
         }}
       />
 
@@ -45,8 +45,8 @@ const CasinoBackground = () => {
         className="absolute inset-0 opacity-[0.015]"
         style={{
           backgroundImage: `
-            linear-gradient(hsl(160 84% 39%) 1px, transparent 1px),
-            linear-gradient(90deg, hsl(160 84% 39%) 1px, transparent 1px)
+            linear-gradient(hsl(209 66% 47%) 1px, transparent 1px),
+            linear-gradient(90deg, hsl(209 66% 47%) 1px, transparent 1px)
           `,
           backgroundSize: '80px 80px',
         }}
